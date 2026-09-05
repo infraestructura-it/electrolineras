@@ -1,0 +1,141 @@
+:root {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --border: #334155;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #22d3ee;
+  --accent-2: #f59e0b;
+  --danger: #f87171;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.container {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+nav.topnav {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+nav.topnav a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+nav.topnav a:hover {
+  color: var(--accent);
+}
+
+h1 {
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+
+h1 + p {
+  color: var(--muted);
+  margin-top: 0;
+  margin-bottom: 24px;
+  font-size: 14px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.card-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.card-meta {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 420px;
+  margin-bottom: 24px;
+}
+
+label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+input, select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+button {
+  background: var(--accent);
+  color: #0f172a;
+  border: none;
+  padding: 9px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 14px;
+  width: fit-content;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+.error {
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge.activo, .badge.finalizada, .badge.aprobado {
+  background: rgba(34, 211, 238, 0.15);
+  color: var(--accent);
+}
+
+.badge.inactivo, .badge.pendiente, .badge.en_curso {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--accent-2);
+}
+
+.badge.en_falla, .badge.fallida, .badge.rechazado {
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--danger);
+}
