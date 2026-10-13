@@ -351,7 +351,7 @@ h3 { font-size: 15px; font-weight: 600; }
 /* ---------- Formularios ---------- */
 
 .formulario { display: grid; gap: 14px; }
-.formulario.dos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.formulario.dos { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 @media (max-width: 700px) { .formulario.dos { grid-template-columns: 1fr; } }
 .formulario .ancho-completo { grid-column: 1 / -1; }
 
@@ -674,4 +674,118 @@ table.tabla { width: 100%; border-collapse: collapse; font-size: 14px; }
 @media (prefers-reduced-motion: reduce) {
   .app-pulso { animation: none; }
   .anillo .avance { transition: none; }
+}
+
+/* ---------- Proforma (documento en papel: colores fijos, no dependen del tema) ---------- */
+
+.hoja-escalada { width: 100%; max-width: 816px; margin: 0 auto; overflow: hidden; }
+.hoja-escalada-interior { transform-origin: top left; }
+.tabla td.mono { white-space: nowrap; }
+
+.documento-proforma {
+  --dp-tinta: #1b1f24;
+  --dp-azul: #1f4e79;
+  --dp-azul-claro: #dde8f3;
+  --dp-linea: #3b3f45;
+  --dp-tenue: #5b6470;
+  position: relative;
+  width: 816px; /* hoja carta a 96 ppp */
+  height: 1056px;
+  margin: 0 auto;
+  padding: 36px 34px 28px;
+  background: #fff;
+  color: var(--dp-tinta);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 11px;
+  line-height: 1.35;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-radius: 4px;
+  box-shadow: 0 10px 40px rgba(3, 8, 18, 0.45);
+}
+
+.dp-cabecera { display: grid; grid-template-columns: 112px 1.2fr 1fr 170px; gap: 16px; align-items: center; }
+.dp-qr svg { display: block; }
+.dp-emisor { text-align: center; }
+.dp-razon { font-size: 16px; font-weight: 700; letter-spacing: 0.02em; }
+.dp-nit { font-size: 14px; font-weight: 700; margin-top: 4px; }
+.dp-contacto { text-align: center; font-size: 10.5px; display: grid; gap: 2px; }
+.dp-tipo { text-align: center; border: 1.5px solid var(--dp-azul); border-radius: 6px; padding: 10px 8px; }
+.dp-tipo-titulo { font-size: 17px; font-weight: 700; color: var(--dp-azul); letter-spacing: 0.04em; }
+.dp-tipo-sub { font-size: 10px; font-weight: 700; color: var(--dp-azul); }
+.dp-numero { font-size: 17px; margin-top: 8px; font-variant-numeric: tabular-nums; }
+
+.dp-verificacion { font-size: 10.5px; display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline; }
+.dp-verificacion strong { font-family: 'Courier New', monospace; font-size: 12px; letter-spacing: 0.08em; }
+.dp-verificacion-ayuda { color: var(--dp-tenue); margin-left: auto; }
+
+.dp-tabla { width: 100%; border-collapse: collapse; }
+.dp-tabla th, .dp-tabla td { border: 1px solid var(--dp-linea); padding: 3px 6px; vertical-align: top; }
+.dp-tabla th { font-weight: 700; text-align: center; background: var(--dp-azul-claro); }
+.dp-centro { text-align: center; }
+.dp-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.dp-bloque-cliente { display: grid; grid-template-columns: 1.15fr 1fr; gap: 14px; align-items: start; }
+.dp-cliente th:first-child { width: 28%; }
+.dp-legal-col { display: grid; gap: 6px; }
+.dp-legal { border: 1px solid var(--dp-linea); padding: 5px 7px; font-size: 9.5px; text-align: justify; min-height: 72px; white-space: pre-line; }
+.dp-legal-correo { margin-top: 4px; color: var(--dp-tenue); }
+
+.dp-detalle { flex: 1; display: flex; }
+.dp-items { height: 100%; border: 1.5px solid var(--dp-linea); }
+.dp-items td { border-top: none; border-bottom: none; }
+.dp-items thead th { border-bottom: 1px solid var(--dp-linea); }
+.dp-detalle-linea { color: var(--dp-tenue); font-size: 10px; margin-top: 2px; }
+.dp-relleno td { height: 100%; }
+.dp-items tbody { height: 100%; }
+.dp-items tfoot th, .dp-items tfoot td { border-top: 1px solid var(--dp-linea); background: none; text-align: left; }
+
+.dp-pie-valores { display: grid; grid-template-columns: 1fr 250px; gap: 12px; align-items: start; }
+.dp-letras { border: 1px solid var(--dp-linea); display: grid; grid-template-columns: 96px 1fr; min-height: 56px; }
+.dp-letras-etiqueta { padding: 6px; border-right: 1px solid var(--dp-linea); font-weight: 700; display: flex; align-items: center; }
+.dp-letras-valor { padding: 6px 8px; }
+.dp-totales th { text-align: right; background: none; font-weight: 400; }
+.dp-totales .dp-fuerte th, .dp-totales .dp-fuerte td { font-weight: 700; }
+.dp-totales .dp-neto th, .dp-totales .dp-neto td { background: var(--dp-azul-claro); }
+
+.dp-firmas { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--dp-linea); }
+.dp-firma { padding: 44px 24px 8px; text-align: center; font-weight: 700; font-size: 12px; }
+.dp-firma::before { content: ''; display: block; border-top: 1px solid var(--dp-linea); margin-bottom: 6px; }
+.dp-firma + .dp-firma { border-left: 1px solid var(--dp-linea); }
+
+.dp-pie { font-size: 9.5px; color: var(--dp-tenue); display: grid; gap: 2px; }
+.dp-nota { text-align: right; color: #b42318; font-weight: 700; font-style: italic; margin-top: 6px; }
+.dp-anulacion { color: #b42318; font-weight: 700; }
+
+.dp-sello {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-24deg);
+  font-size: 120px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(180, 35, 24, 0.16);
+  border: 8px solid rgba(180, 35, 24, 0.16);
+  padding: 0 28px;
+  border-radius: 12px;
+  pointer-events: none;
+}
+
+/* Barra de acciones sobre el documento */
+.barra-documento { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+
+/* Vista pública /p/<código> */
+.pagina-publica { min-height: 100vh; background: var(--tinta); padding: 20px 16px 48px; display: grid; gap: 16px; justify-items: center; align-content: start; }
+.pagina-publica > .hoja-escalada { width: 100%; }
+.pagina-publica .resumen-publico { width: min(816px, 100%); display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+
+@media print {
+  @page { size: letter; margin: 10mm; }
+  :root, html, body { background: #fff !important; color-scheme: light !important; }
+  .documento-proforma, .documento-proforma * { visibility: visible; }
+  .documento-proforma { position: absolute; left: 0; top: 0; width: 100%; height: 255mm; box-shadow: none; border-radius: 0; padding: 0; }
+  .hoja-escalada { height: auto !important; overflow: visible; }
+  .hoja-escalada-interior { transform: none !important; width: auto !important; }
 }

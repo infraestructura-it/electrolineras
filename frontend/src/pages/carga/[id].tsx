@@ -256,6 +256,12 @@ export default function CargaEnCurso() {
         )
       )}
 
+      {sesion.proforma && sesion.proforma.estado === 'vigente' && (
+        <Link className="btn sec app-boton" href={`/p/${sesion.proforma.codigo_verificacion}`}>
+          Ver proforma {sesion.proforma.numero}
+        </Link>
+      )}
+
       {error && <p className="app-error">{error}</p>}
       {volverAlCargador}
     </>

@@ -113,3 +113,18 @@ export function useDatos<T>(cargar: () => Promise<T>, intervaloMs?: number, clav
 
   return { datos, error, recargar };
 }
+
+// Base de las URLs públicas (QR de cargadores y de proformas): la URL pública configurada
+// o, si está vacía, la dirección con la que se abrió el panel.
+export function useBasePublica() {
+  const [base, setBase] = useState('');
+  useEffect(() => {
+    import('@/lib/api').then(({ configuracionApi }) =>
+      configuracionApi
+        .publica()
+        .then((c) => setBase(c.url_publica_app || window.location.origin))
+        .catch(() => setBase(window.location.origin)),
+    );
+  }, []);
+  return base;
+}

@@ -13,6 +13,9 @@ const RUTAS_ACCESO = ['/login', '/registro'];
 export default function App({ Component, pageProps }: AppProps) {
   const { pathname } = useRouter();
 
+  // Documento público de una proforma (lo abre su QR): página completa, sin marco.
+  if (pathname.startsWith('/p/')) return <Component {...pageProps} />;
+
   if (RUTAS_USUARIO.some((ruta) => pathname.startsWith(ruta))) {
     return (
       <AppUsuarioLayout>

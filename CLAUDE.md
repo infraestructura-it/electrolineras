@@ -18,18 +18,20 @@ electrolineras/
 ├── backend/                 # API NestJS 10 (TypeScript) — puerto 3000 (API + gateway OCPP)
 │   ├── src/comun/           # AlmacenService (persistencia JSON), decoradores @Publico/@Roles/@Usuario
 │   ├── src/modules/         # auth, usuarios, configuracion, operadores, cargadores, sesiones,
-│   │                        # facturacion, ocpp-gateway
+│   │                        # facturacion, proformas, ocpp-gateway
 │   ├── scripts/simulador-ocpp.js  # simulador del MDXDC3001 para probar sin el equipo
 │   └── .env.example         # ADMIN_EMAIL, ADMIN_PASSWORD, JWT_SECRET, DATA_DIR, PORT
 ├── frontend/                # Next.js 14 (pages router) — puerto 3001 en producción
 │   ├── src/lib/api.ts       # cliente único de API: toda llamada al backend pasa por aquí
 │   ├── src/lib/auth.tsx     # sesión del panel (token en localStorage, ProveedorAuth/useAuth)
-│   ├── src/components/      # PanelLayout (barra lateral), ui.tsx, Graficos, QrCargador
+│   ├── src/components/      # PanelLayout (barra lateral), ui.tsx, Graficos, QrCargador,
+│   │                        # DocumentoProforma + HojaEscalada (formato carta de la proforma)
 │   ├── src/pages/c/         # app de usuario: pantalla que abre el QR del cargador (sin login)
 │   ├── src/pages/carga/     # app de usuario: carga en vivo, pago y recibo (sin login)
+│   ├── src/pages/p/         # documento público de una proforma (lo abre su QR, sin login)
 │   ├── src/pages/login.tsx, registro.tsx
-│   └── src/pages/*/         # panel: inicio, cargadores, sesiones, operadores, facturacion,
-│                            # ocpp (consola), usuarios, configuracion
+│   └── src/pages/*/         # panel: inicio, cargadores, sesiones, operadores, proformas,
+│                            # facturacion, ocpp (consola), usuarios, configuracion
 ├── docs/                    # especificación técnica y modelo de datos
 ├── scripts/windows/         # scripts de despliegue para Windows Server
 └── ecosystem.config.js      # procesos PM2 (backend + frontend)
@@ -95,6 +97,9 @@ Pública = sin login. Admin = solo administradores. El resto exige login (con al
 | `GET /sesiones`, `GET /estadisticas?dias=14` | Login | Listado y datos del dashboard |
 | `GET /sesiones/:id`, `POST /sesiones`, `POST /sesiones/:id/finalizar`, `POST /sesiones/:id/pagar` | Pública | App de usuario (el UUID no es adivinable) |
 | `POST /facturacion/cobrar` | Login | Simulador de cobro |
+| `GET /proformas?estado=&q=`, `GET /proformas/:id`, `POST /proformas` | Login | Listado, detalle y emisión desde una sesión |
+| `POST /proformas/:id/anular` | Admin | Anular con motivo (el número no se reutiliza) |
+| `GET /proformas/verificar/:codigo` | Pública | Documento por código de verificación (QR) |
 | `GET /ocpp/conexiones` | Login | Cargadores conectados por WebSocket |
 | `GET /ocpp/catalogo`, `GET /ocpp/mensajes`, `POST /ocpp/:numero_serie/comandos` | Admin | Consola OCPP |
 | `WS /ocpp/:numero_serie` | Cargador | Gateway OCPP 1.6J (subprotocolo `ocpp1.6`) |
@@ -118,6 +123,26 @@ Pública = sin login. Admin = solo administradores. El resto exige login (con al
 - Probar sin el equipo: `node scripts/simulador-ocpp.js ws://localhost:3000/ocpp <serie>`
   (desde `backend/`; teclas `t <tarjeta>`, `s`, `f`, `a`, `q`).
 
+## Proformas (prefacturas)
+
+- `proformas.service.ts`: emite una proforma por sesión finalizada. Automática al pagar en la
+  app (consumidor final, documento `222222222222`, gancho `registrarProformas` de
+  `SesionesService`); manual desde Sesiones con datos del cliente y retenciones opcionales.
+- Consecutivo: `prefijo-000001`, reservado en `ConfiguracionService.reservarConsecutivo()`
+  antes de emitir (un corte salta un número pero nunca lo repite). No se puede bajar por
+  debajo del último emitido con el mismo prefijo.
+- Cálculo: la tarifa por kWh incluye IVA (precio al consumidor final), así que
+  `subtotal = total / (1 + IVA)`. Retenciones: RteFuente y ReteICA (por mil) sobre el
+  subtotal, ReteIVA sobre el IVA. Total menos retenciones redondeado a pesos.
+  `valor-en-letras.ts` convierte el neto a letras ("… PESOS M/CTE").
+- Cada proforma copia emisor, cliente, líneas y totales al emitirse: cambiar la
+  parametrización no altera las ya emitidas. Anular conserva el número y deja un sello.
+- QR: `<url pública>/p/<codigo_verificacion>` (12 hex). Formato carta (816×1056 px) que
+  sigue la factura de referencia; se imprime o guarda como PDF con el diálogo del navegador.
+- Parametrización en Configuración → Proformas: emisor, texto legal, prefijo, consecutivo,
+  IVA, retenciones, código/descripción del producto, forma de pago, vencimiento, nota al pie.
+- No es factura electrónica DIAN (no hay CUFE ni validación): la nota al pie lo indica.
+
 ## Estado actual
 
 - **Persistencia temporal en JSON**: cada servicio guarda su colección con `AlmacenService`
@@ -132,7 +157,8 @@ Pública = sin login. Admin = solo administradores. El resto exige login (con al
 - Al registrar un cargador queda `activo`; si se conecta por OCPP, `StatusNotification` lo
   mantiene al día (`Faulted` → `en_falla`, `Unavailable` → `inactivo`).
 - Pendientes: PostgreSQL (en la misma VM Windows), Wompi (cobro + dispersión), probar el
-  gateway con el MDXDC3001 real, `wss://` (TLS) para producción.
+  gateway con el MDXDC3001 real, `wss://` (TLS) para producción, envío de la proforma por
+  correo, factura electrónica DIAN a través de un proveedor tecnológico.
 
 ---
 

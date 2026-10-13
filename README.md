@@ -43,6 +43,7 @@ npm run start:dev
 4. Integrar la API de cobro y dispersión de pagos de Wompi (hoy el pago queda `pendiente`).
 5. ~~App de usuario~~ → versión web lista: QR → iniciar carga → carga en vivo → pagar → recibo.
 6. ~~Panel~~ → barra lateral, login con roles (administrador / operador), dashboard con gráficos, QR descargable, consola OCPP y configuración.
+7. ~~Proformas~~ → prefacturas con consecutivo, QR de verificación, listado, anulación y parametrización en Configuración.
 
 ## Producción con PM2
 

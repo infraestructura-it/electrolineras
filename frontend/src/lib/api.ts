@@ -134,6 +134,7 @@ export interface SesionCarga {
   medicion_simulada: boolean;
   cargador_conectado: boolean;
   pago: PagoSesion | null;
+  proforma: { id: string; numero: string; codigo_verificacion: string; estado: 'vigente' | 'anulada' } | null;
 }
 
 export interface RepartoFacturacion {
@@ -158,6 +159,96 @@ export interface Estadisticas {
   por_cargador: { numero_serie: string; kwh: number; ingresos: number; sesiones: number }[];
 }
 
+export interface ParametrosFacturacion {
+  razon_social: string;
+  nit: string;
+  direccion: string;
+  ciudad: string;
+  telefono: string;
+  correo: string;
+  sitio_web: string;
+  texto_legal: string;
+  prefijo: string;
+  siguiente_consecutivo: number;
+  iva_porcentaje: number;
+  retefuente_porcentaje: number;
+  reteiva_porcentaje: number;
+  reteica_por_mil: number;
+  dias_vencimiento: number;
+  forma_pago: string;
+  codigo_producto: string;
+  descripcion_producto: string;
+  nota_pie: string;
+}
+
+export interface ClienteProforma {
+  nombre: string;
+  documento: string;
+  direccion: string;
+  ciudad: string;
+  telefono: string;
+  correo: string;
+}
+
+export interface Proforma {
+  id: string;
+  numero: string;
+  prefijo: string;
+  consecutivo: number;
+  codigo_verificacion: string;
+  estado: 'vigente' | 'anulada';
+  origen: 'automatica' | 'manual';
+  fecha_emision: string;
+  fecha_vencimiento: string;
+  sesion_id: string;
+  operador_id: string;
+  numero_serie: string;
+  emisor: Omit<ParametrosFacturacion, 'prefijo' | 'siguiente_consecutivo'>;
+  punto_carga: { operador: string; ubicacion: string | null; numero_serie: string; modelo: string };
+  cliente: ClienteProforma;
+  lineas: {
+    codigo: string;
+    descripcion: string;
+    detalle: string;
+    cantidad: number;
+    unidad: string;
+    precio_unitario: number;
+    valor_total: number;
+  }[];
+  totales: {
+    total_general: number;
+    descuento: number;
+    subtotal: number;
+    iva_porcentaje: number;
+    iva: number;
+    total: number;
+    retefuente: number;
+    reteiva: number;
+    reteica: number;
+    total_neto: number;
+  };
+  valor_en_letras: string;
+  forma_pago: string;
+  vendedor: string;
+  aplica_retenciones: boolean;
+  anulacion: { fecha: string; motivo: string; usuario: string } | null;
+}
+
+export interface ProformaResumen {
+  id: string;
+  numero: string;
+  estado: 'vigente' | 'anulada';
+  origen: 'automatica' | 'manual';
+  fecha_emision: string;
+  cliente: { nombre: string; documento: string };
+  numero_serie: string;
+  operador: string;
+  total: number;
+  total_neto: number;
+  sesion_id: string;
+  codigo_verificacion: string;
+}
+
 export interface Configuracion {
   comision_por_defecto: number;
   url_publica_app: string;
@@ -167,6 +258,7 @@ export interface Configuracion {
   tarjetas_rfid_autorizadas: string[];
   simular_medicion: boolean;
   potencia_simulada_kw: number;
+  facturacion: ParametrosFacturacion;
 }
 
 export interface ConexionOcpp {
@@ -224,8 +316,29 @@ export const usuariosApi = {
 export const configuracionApi = {
   publica: () => request<{ url_publica_app: string; permitir_registro_operadores: boolean }>('/configuracion/publica'),
   obtener: () => request<Configuracion>('/configuracion'),
-  actualizar: (cambios: Partial<Configuracion>) => request<Configuracion>('/configuracion', enviar('PATCH', cambios)),
+  actualizar: (cambios: Partial<Omit<Configuracion, 'facturacion'>> & { facturacion?: Partial<ParametrosFacturacion> }) =>
+    request<Configuracion>('/configuracion', enviar('PATCH', cambios)),
 };
+
+// ---------- Proformas (prefacturas) ----------
+// backend/src/modules/proformas
+
+export const proformasApi = {
+  listar: (filtro: { estado?: string; q?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (filtro.estado) q.set('estado', filtro.estado);
+    if (filtro.q) q.set('q', filtro.q);
+    return request<ProformaResumen[]>(`/proformas?${q}`);
+  },
+  obtener: (id: string) => request<Proforma>(`/proformas/${id}`),
+  verificar: (codigo: string) => request<Proforma>(`/proformas/verificar/${encodeURIComponent(codigo)}`),
+  generar: (data: { sesion_id: string; cliente?: ClienteProforma; aplicar_retenciones?: boolean }) =>
+    request<Proforma>('/proformas', enviar('POST', data)),
+  anular: (id: string, motivo: string) => request<Proforma>(`/proformas/${id}/anular`, enviar('POST', { motivo })),
+};
+
+// URL que va en el QR de una proforma: abre el documento sin login.
+export const urlVerificacionProforma = (base: string, codigo: string) => `${base.replace(/\/+$/, '')}/p/${codigo}`;
 
 // ---------- Operadores ----------
 // backend/src/modules/operadores
@@ -307,6 +420,10 @@ export const formatoCOP = (valor: number) =>
 
 export const formatoKwh = (valor: number) =>
   `${new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(valor)} kWh`;
+
+// Valores de la proforma: pesos con dos decimales, como en la factura de referencia.
+export const formatoPesos = (valor: number) =>
+  new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(valor);
 
 export const formatoFecha = (iso: string) =>
   new Date(iso).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' });

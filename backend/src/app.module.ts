@@ -7,6 +7,7 @@ import { CargadoresModule } from './modules/cargadores/cargadores.module';
 import { SesionesModule } from './modules/sesiones/sesiones.module';
 import { FacturacionModule } from './modules/facturacion/facturacion.module';
 import { OcppGatewayModule } from './modules/ocpp-gateway/ocpp-gateway.module';
+import { ProformasModule } from './modules/proformas/proformas.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { OcppGatewayModule } from './modules/ocpp-gateway/ocpp-gateway.module';
     SesionesModule,
     FacturacionModule,
     OcppGatewayModule,
+    ProformasModule,
   ],
 })
 export class AppModule {}

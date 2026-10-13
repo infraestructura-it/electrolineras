@@ -5,6 +5,7 @@ import { ReactNode, useEffect, useState } from 'react';
 import {
   BatteryCharging,
   Building2,
+  FileText,
   LayoutDashboard,
   LogOut,
   LucideIcon,
@@ -41,6 +42,7 @@ const GRUPOS: { titulo: string; enlaces: Enlace[] }[] = [
     titulo: 'Negocio',
     enlaces: [
       { href: '/operadores', texto: 'Operadores', textoOperador: 'Mi empresa', icono: Building2 },
+      { href: '/proformas', texto: 'Proformas', icono: FileText },
       { href: '/facturacion', texto: 'Facturación', icono: Receipt },
     ],
   },

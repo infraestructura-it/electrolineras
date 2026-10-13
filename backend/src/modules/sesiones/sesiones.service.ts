@@ -52,6 +52,14 @@ export interface SesionRegistro {
   pago: PagoSesion | null;
 }
 
+// Referencia a la proforma de una sesión, para que la app muestre el enlace al documento.
+export interface ReferenciaProforma {
+  id: string;
+  numero: string;
+  codigo_verificacion: string;
+  estado: 'vigente' | 'anulada';
+}
+
 const ESPERA_INICIO_MS = 3 * 60_000; // si el cargador no envía StartTransaction en 3 min, la sesión falla
 const PERSISTIR_MEDICION_CADA_MS = 15_000;
 
@@ -62,6 +70,9 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
   private readonly logger = new Logger(SesionesService.name);
   private readonly sesiones = new Map<string, SesionRegistro>();
   private ultimaPersistencia = 0;
+  // Los registra ProformasService (evita la dependencia circular sesiones ↔ proformas).
+  private alPagar: ((sesion: SesionRegistro) => void) | null = null;
+  private buscarProforma: ((sesion_id: string) => ReferenciaProforma | null) | null = null;
 
   constructor(
     private readonly almacen: AlmacenService,
@@ -76,6 +87,19 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
 
   onModuleInit() {
     this.ocpp.registrarManejador(this);
+  }
+
+  registrarProformas(ganchos: {
+    alPagar: (sesion: SesionRegistro) => void;
+    buscarProforma: (sesion_id: string) => ReferenciaProforma | null;
+  }) {
+    this.alPagar = ganchos.alPagar;
+    this.buscarProforma = ganchos.buscarProforma;
+  }
+
+  // Datos crudos de una sesión, para generar su proforma.
+  registro(id: string): SesionRegistro {
+    return { ...this.buscar(id) };
   }
 
   // ---------- Consultas ----------
@@ -201,6 +225,13 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
     });
     sesion.pago = { ...resultado, fecha: new Date().toISOString() };
     this.persistir();
+    // La proforma se genera con el pago; si falla, el pago ya quedó registrado y se puede
+    // generar después desde el panel.
+    try {
+      this.alPagar?.(sesion);
+    } catch (e) {
+      this.logger.error(`No se pudo generar la proforma de la sesión ${sesion.id}: ${(e as Error).message}`);
+    }
     return this.vista(sesion);
   }
 
@@ -407,6 +438,7 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
       costo_estimado,
       medicion_simulada: s.medicion === 'simulada',
       cargador_conectado: this.ocpp.estaConectado(s.numero_serie),
+      proforma: this.buscarProforma?.(s.id) ?? null,
     };
   }
 
