@@ -7,9 +7,9 @@ Idioma del proyecto: **español** (código, comentarios, commits y documentació
 
 Plataforma de gestión y facturación de cargadores eléctricos DC. Un **operador** registra
 sus cargadores, define tarifas y factura a los usuarios finales; la plataforma retiene una
-comisión configurable por operador. Hardware de referencia: cargador DC 30 kW **MDXDC3001**
-(OCPP 1.6 JSON, versión por confirmar con el fabricante). Detalle completo en
-`docs/especificacion-tecnica.md`.
+comisión configurable por operador. Hardware de referencia: cargador DC 30 kW **MDXDC3001**,
+**OCPP 1.6J** (`ws`/`wss`, confirmado en el manual), conector CCS2, RFID y QR. Detalle completo
+y configuración del cargador en `docs/especificacion-tecnica.md` (secciones 8 y 9).
 
 ## Estructura
 
@@ -18,7 +18,10 @@ electrolineras/
 ├── backend/                 # API NestJS 10 (TypeScript) — puerto 3000
 │   └── src/modules/         # operadores, cargadores, sesiones, facturacion, ocpp-gateway
 ├── frontend/                # Next.js 14 (pages router) — puerto 3001 en producción
-│   └── src/lib/api.ts       # cliente único de API: toda llamada al backend pasa por aquí
+│   ├── src/lib/api.ts       # cliente único de API: toda llamada al backend pasa por aquí
+│   ├── src/pages/c/         # app de usuario: pantalla que abre el QR del cargador
+│   ├── src/pages/carga/     # app de usuario: carga en vivo, pago y recibo
+│   └── src/pages/*/         # panel de operador: operadores, cargadores, sesiones, facturación
 ├── docs/                    # especificación técnica y modelo de datos
 ├── scripts/windows/         # scripts de despliegue para Windows Server
 └── ecosystem.config.js      # procesos PM2 (backend + frontend)
@@ -42,16 +45,45 @@ Producción con PM2, desde la raíz: `pm2 start ecosystem.config.js && pm2 save`
 - Al agregar o cambiar un endpoint, actualizar **también** `frontend/src/lib/api.ts`
   (tipos y función) para que backend y frontend no se desalineen.
 - La comisión nunca va fija en código: viene de `comision_pactada` del operador.
+  Es un **porcentaje** (`20` = 20 %), igual en entidad, backend y panel. Sin valor: 20 %.
+- Montos en **COP**; formatear en el frontend con `formatoCOP` / `formatoKwh` de `api.ts`.
+- `numero_serie` del cargador = `pile_number_master` configurado en el equipo, y es lo que
+  va en la URL del QR (`/c/<numero_serie>`).
+- La app de usuario (`/c/*`, `/carga/*`) usa `AppUsuarioLayout`, sin el menú del panel
+  (lo decide `_app.tsx`). Diseño mobile-first.
+- Errores del backend con excepciones de NestJS (`NotFoundException`, `ConflictException`,
+  `BadRequestException`) y mensajes en español: la app los muestra tal cual al usuario.
 - Puerto del backend configurable con la variable `PORT` (por defecto 3000).
 - CORS habilitado en `backend/src/main.ts` porque el frontend llama a la API desde el
   navegador en otro origen (puerto 3001).
 
+## Endpoints
+
+| Método y ruta | Uso |
+|---|---|
+| `GET/POST /operadores`, `GET /operadores/:id` | Panel |
+| `GET/POST /cargadores`, `PATCH /cargadores/:numero_serie` | Panel (tarifa, ubicación, estado) |
+| `GET /cargadores/:numero_serie` | App de usuario (incluye `operador_nombre`) |
+| `GET /sesiones`, `GET /sesiones/:id` | Panel y app (kWh y `costo_estimado` en vivo) |
+| `POST /sesiones` `{ numero_serie \| cargador_id, usuario_id }` | Iniciar carga |
+| `POST /sesiones/:id/finalizar` `{ kwh_consumidos? }` | Detener; sin kWh usa la última medición |
+| `POST /sesiones/:id/pagar` | Calcula reparto y registra el pago (idempotente) |
+| `POST /facturacion/cobrar` | Simulador de cobro del panel |
+
 ## Estado actual
 
-- Los servicios guardan los datos **en memoria**: se pierden al reiniciar el backend.
-  Las entidades TypeORM ya existen, pero PostgreSQL aún no está conectado.
-- Pendientes: conectar PostgreSQL, integrar Wompi (cobro + dispersión), confirmar versión
-  OCPP del MDXDC3001 y conectar el gateway al cargador real, autenticación.
+- Los servicios guardan los datos **en memoria** (un `Map` por servicio): se pierden al
+  reiniciar el backend. Las entidades TypeORM ya existen; cambiar los `Map` por repositorios
+  al conectar PostgreSQL (los métodos públicos de los servicios no deben cambiar).
+- **Medición simulada**: sin gateway OCPP, los kWh se calculan a 30 kW según el tiempo
+  transcurrido. Variables: `SIMULAR_MEDICION` (por defecto activo; `false` para apagar) y
+  `POTENCIA_SIMULADA_KW`. La app muestra un aviso mientras esté activa.
+- **Pago**: `POST /sesiones/:id/pagar` deja el pago en `pendiente`; no hay cobro real hasta
+  integrar Wompi.
+- Al registrar un cargador queda `activo`; cuando exista el gateway, el estado lo actualizará
+  `StatusNotification`.
+- Pendientes: PostgreSQL (en la misma VM Windows), gateway OCPP 1.6J, Wompi (cobro +
+  dispersión), autenticación del panel.
 
 ---
 

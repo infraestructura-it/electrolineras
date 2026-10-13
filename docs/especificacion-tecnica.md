@@ -9,8 +9,9 @@ usuarios finales que cargan sus vehículos. La plataforma cobra una comisión co
 por cada transacción.
 
 Hardware de referencia en manos del equipo: **cargador DC 30kW, modelo MDXDC3001**
-(AC 380V±15%, máx. 100A, IP55, protocolo esperado: OCPP 1.6 JSON — a confirmar con el
-fabricante).
+(AC 380V±15%, máx. 100A, IP55). Según el manual del equipo: **OCPP 1.6J sobre `ws://` y `wss://`**,
+un conector CCS2, comunicación Ethernet / WiFi / 4G, autorización por RFID y código QR.
+Detalle de configuración en la sección 8.
 
 ## 2. Modelo de negocio
 
@@ -76,7 +77,45 @@ flowchart TD
 
 ## 7. Pendientes / decisiones abiertas
 
-- Confirmar con el fabricante la versión exacta de OCPP soportada por el MDXDC3001.
 - Definir el criterio comercial de comisión por operador (queda para negociación futura;
   el sistema debe soportarlo como campo configurable desde el día uno).
 - Definir si habrá app móvil nativa desde el inicio o se arranca solo con web responsive.
+
+## 8. Configuración del cargador MDXDC3001 (del manual del equipo)
+
+Datos tomados del manual del cargador DC 20/30/40 kW (versión IIT en español). Firmware del
+equipo recibido: `SSWL_DC-V1.0.69`.
+
+| Ajuste del cargador | Pantalla | Valor en la plataforma |
+|---|---|---|
+| `domain_master` | Basic Settings, pág. 1 | URL del gateway OCPP propio, ej. `ws://<servidor>:9000/ocpp` (laboratorio) o `wss://ocpp.<dominio>/ocpp` (producción) |
+| `pile_number_master` | Basic Settings, pág. 1 | Igual al `numero_serie` registrado en el panel de Cargadores |
+| `qr_code_type` | Device Configuration | `0` (QR personalizado) |
+| `QR code` | Basic Settings, pág. 2 | URL de la app de usuario: `https://<app>/c/<numero_serie>` |
+| `card_entry_en` | Device Configuration | `1` para permitir RFID validado por el servidor |
+| `plug_and_charge_en` | Device Configuration | `0` (la carga requiere autorización) |
+
+Advertencias:
+
+- De fábrica `domain_master` apunta a `wss://ocpp.sswl.com` (plataforma del fabricante).
+  Cambiarlo **antes** de conectar el equipo a Internet.
+- Verificar en la primera conexión si el equipo agrega el `pile_number` al final de la URL
+  (patrón habitual de OCPP 1.6J: `.../ocpp/<pile_number>`).
+- El reloj del equipo recibido estaba en el año 2000: el servidor OCPP debe sincronizar la hora
+  (la respuesta a `BootNotification` incluye `currentTime`).
+- Tras cambiar ajustes: Save y luego About → System reset.
+
+## 9. App de usuario final
+
+Flujo implementado (web responsive, rutas sin el menú del panel):
+
+1. El usuario escanea el QR del cargador → `/c/<numero_serie>`: ubicación, operador, tarifa y
+   estado. Escribe su correo o celular (identificador para el recibo) y pulsa "Iniciar carga"
+   (`POST /sesiones` con `numero_serie`).
+2. `/carga/<id>`: kWh, tiempo y costo estimado en vivo (consulta `GET /sesiones/:id` cada 3 s).
+   "Detener carga" → `POST /sesiones/:id/finalizar`.
+3. Resumen y "Pagar" → `POST /sesiones/:id/pagar`: calcula el reparto con la comisión del
+   operador y queda en estado `pendiente` hasta integrar Wompi. Se muestra el recibo.
+
+Mientras el gateway OCPP no esté conectado, el consumo se **simula** a 30 kW
+(`SIMULAR_MEDICION`, activo por defecto) y la app lo indica en pantalla.

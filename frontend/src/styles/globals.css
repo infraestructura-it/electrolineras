@@ -139,3 +139,187 @@ button:hover {
   background: rgba(248, 113, 113, 0.15);
   color: var(--danger);
 }
+
+/* ---------- App de usuario final (rutas /c/* y /carga/*) ---------- */
+
+.app-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.app-marca {
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.app-rayo {
+  color: var(--accent);
+}
+
+.app-usuario {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 20px 16px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.app-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+}
+
+.app-centro {
+  text-align: center;
+}
+
+.app-etiqueta {
+  color: var(--muted);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-centro .app-etiqueta {
+  justify-content: center;
+}
+
+.app-titulo {
+  font-size: 22px;
+  margin: 6px 0 2px;
+}
+
+.app-texto {
+  color: var(--muted);
+  font-size: 15px;
+  margin: 4px 0;
+}
+
+.app-cifra {
+  font-size: 44px;
+  font-weight: 700;
+  margin: 10px 0 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.app-datos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 12px;
+  margin: 16px 0 0;
+  text-align: left;
+}
+
+.app-datos dt,
+.app-recibo dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.app-datos dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+}
+
+.app-recibo {
+  margin: 16px 0 0;
+}
+
+.app-recibo div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.app-recibo dd {
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.app-form {
+  max-width: none;
+  margin: 0;
+}
+
+.app-form input {
+  font-size: 16px; /* evita el zoom automático en iOS */
+  padding: 12px;
+}
+
+.app-pasos {
+  margin: 0 0 6px;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.app-boton {
+  width: 100%;
+  padding: 15px;
+  font-size: 17px;
+  border-radius: 12px;
+}
+
+.app-boton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.app-boton-peligro {
+  background: var(--danger);
+}
+
+.app-aviso {
+  display: block;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--accent-2);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.app-enlace {
+  color: var(--accent);
+  text-align: center;
+  font-size: 14px;
+}
+
+.app-nota {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 12px 0 0;
+}
+
+.app-error {
+  color: var(--danger);
+  font-size: 14px;
+  margin: 4px 0 0;
+}
+
+.app-pulso {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: app-latido 1.4s ease-in-out infinite;
+}
+
+@keyframes app-latido {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-pulso { animation: none; }
+}

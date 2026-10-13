@@ -9,7 +9,7 @@ automáticamente a los usuarios finales, con reparto de comisión hacia la plata
 ```
 electrolineras/
 ├── backend/     # API NestJS: operadores, cargadores, sesiones, facturación, gateway OCPP
-├── frontend/    # Panel de operador en Next.js 14 (operadores, cargadores, sesiones, facturación)
+├── frontend/    # Next.js 14: panel de operador + app de usuario final (QR → carga → pago)
 ├── docs/        # Especificación técnica y modelo de datos
 └── scripts/windows/  # Scripts de despliegue para Windows Server (PM2, firewall, arranque)
 ```
@@ -37,10 +37,11 @@ npm run start:dev
 
 ## Pendientes inmediatos
 
-1. Confirmar versión OCPP del cargador MDXDC3001 con el fabricante.
-2. Conectar PostgreSQL real (TypeORM) — las entidades ya están definidas.
-3. Integrar la API de cobro y dispersión de pagos de Wompi.
-4. Completar el frontend (panel de operador listo en versión inicial; falta app de usuario).
+1. ~~Confirmar versión OCPP del MDXDC3001~~ → **OCPP 1.6J** (ws/wss), según el manual del equipo.
+2. Conectar PostgreSQL real (TypeORM) — las entidades ya están definidas; hoy los datos viven en memoria.
+3. Implementar el gateway OCPP 1.6J y conectar el cargador real (hoy la medición se simula a 30 kW).
+4. Integrar la API de cobro y dispersión de pagos de Wompi (hoy el pago queda `pendiente`).
+5. ~~App de usuario~~ → versión web lista: QR → iniciar carga → carga en vivo → pagar → recibo.
 
 ## Producción con PM2
 

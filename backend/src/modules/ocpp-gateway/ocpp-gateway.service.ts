@@ -1,8 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 // Punto de entrada para la comunicación OCPP con los cargadores (ej. MDXDC3001).
-// Pendiente confirmar con el fabricante: versión exacta de OCPP (1.6 JSON o 2.0.1).
-// Ver docs/electrolineras-especificacion-tecnica.md, sección 7 (pendientes).
+// Versión confirmada en el manual del equipo: OCPP 1.6J sobre ws:// y wss://.
+// El cargador se configura con domain_master (URL del servidor) y pile_number_master
+// (su identificador, que en la plataforma es numero_serie). Ver docs/especificacion-tecnica.md.
 //
 // Mensajes OCPP 1.6 relevantes para el flujo de facturación:
 // - BootNotification: el cargador se anuncia al conectarse.

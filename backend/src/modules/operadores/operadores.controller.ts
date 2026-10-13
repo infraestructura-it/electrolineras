@@ -16,7 +16,15 @@ export class OperadoresController {
   }
 
   @Post()
-  create(@Body() body: { nombre: string; email_contacto?: string }) {
+  create(
+    @Body()
+    body: {
+      nombre: string;
+      email_contacto?: string;
+      cuenta_beneficiario?: string;
+      comision_pactada?: number | null;
+    },
+  ) {
     return this.operadoresService.create(body);
   }
 }
