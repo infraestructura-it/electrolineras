@@ -54,4 +54,11 @@ pm2 start ecosystem.config.js
 pm2 save
 ```
 
-En Windows Server usar los scripts de `scripts/windows/` (detalle en `CLAUDE.md`).
+Despliegue recomendado: contenedor LXC Ubuntu 24.04 en Proxmox, con un solo comando en el host:
+
+```bash
+IP=192.168.2.50/24 GW=192.168.2.1 \
+  bash <(curl -fsSL https://raw.githubusercontent.com/infraestructura-it/electrolineras/main/scripts/proxmox/crear-lxc.sh)
+```
+
+En Windows Server usar los scripts de `scripts/windows/`. Detalle de ambos en `CLAUDE.md`.

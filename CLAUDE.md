@@ -33,6 +33,8 @@ electrolineras/
 │   └── src/pages/*/         # panel: inicio, cargadores, sesiones, operadores, proformas,
 │                            # facturacion, ocpp (consola), usuarios, configuracion
 ├── docs/                    # especificación técnica y modelo de datos
+├── scripts/proxmox/         # crear-lxc.sh (contenedor Ubuntu 24.04) y migrar-datos.sh
+├── scripts/linux/           # instalar.sh y actualizar.sh (Ubuntu 24.04, PM2 + systemd)
 ├── scripts/windows/         # scripts de despliegue para Windows Server
 └── ecosystem.config.js      # procesos PM2 (backend + frontend)
 ```
@@ -238,9 +240,50 @@ pm2 restart electrolineras
 | El cargador no conecta (404) | Su número de serie no está registrado | Registrarlo en Cargadores con el mismo `pile_number_master` |
 | Al pegar varios comandos se juntan líneas | El último renglón pegado queda sin Enter | Pegar de a un comando, o unirlos con `;` |
 
-### Alternativa recomendada a futuro
+---
 
-Para este stack (NestJS + Next.js + PostgreSQL), un contenedor **LXC Ubuntu/Debian** en el
-mismo Proxmox es más liviano y simple: `pm2 startup` funciona nativo, `ufw` para el
-firewall y no hay ninguno de los ajustes de la tabla anterior. El código del proyecto
-(CORS, `.env.local`, builds, puertos) es el mismo en ambos sistemas.
+## Despliegue en contenedor LXC Ubuntu 24.04 (Proxmox) — recomendado
+
+Más liviano que la VM Windows y sin los ajustes de la tabla anterior. La app corre con el
+usuario de sistema `electro` en `/opt/electrolineras`, PM2 bajo systemd (`pm2-electro.service`).
+
+### Crear el contenedor (en la shell del host Proxmox, como root)
+
+```bash
+IP=192.168.2.50/24 GW=192.168.2.1 \
+  bash <(curl -fsSL https://raw.githubusercontent.com/infraestructura-it/electrolineras/main/scripts/proxmox/crear-lxc.sh)
+```
+
+- Descarga la plantilla `ubuntu-24.04-standard`, crea un contenedor sin privilegios con
+  `nesting=1`, 2 CPU, 2 GB de RAM, 16 GB de disco, arranque automático y zona horaria Bogotá.
+- Dentro instala Node.js 24 (NodeSource), PM2, clona el repo, crea `backend/.env` y
+  `frontend/.env.local` (con la IP del contenedor), compila, arranca y abre 22/3000/3001 en ufw.
+- Al final muestra la IP, la clave de root y la del admin del panel: **solo se muestran una vez**.
+- Variables: `CTID`, `NOMBRE`, `IP` (`dhcp` o IP/máscara), `GW`, `PUENTE`, `ALMACEN`, `DISCO`,
+  `RAM`, `CPUS`, `ADMIN_PASSWORD`, `ZT_RED` (ID de red ZeroTier: habilita `/dev/net/tun` y se une).
+
+### Operación
+
+```bash
+pct exec <CTID> -- /opt/electrolineras/scripts/linux/actualizar.sh     # actualizar desde GitHub
+pct exec <CTID> -- runuser -u electro -- pm2 list                      # estado
+pct exec <CTID> -- runuser -u electro -- pm2 logs electrolineras --lines 50 --nostream
+pct enter <CTID>                                                       # shell del contenedor
+```
+
+`instalar.sh` es idempotente: correrlo de nuevo actualiza el código y conserva `.env` y datos.
+
+### Migrar los datos desde la VM Windows
+
+1. En la VM Windows, detener la app para que no cambien los datos:
+   `$env:PM2_HOME='C:\pm2'; pm2 stop all`
+2. Copiar la carpeta de datos al host Proxmox:
+   `scp -r C:\Users\Administrador\electrolineras\backend\data root@<IP-proxmox>:/root/electrolineras-data`
+3. En el host Proxmox:
+   `bash <(curl -fsSL https://raw.githubusercontent.com/infraestructura-it/electrolineras/main/scripts/proxmox/migrar-datos.sh) <CTID> /root/electrolineras-data`
+   (respalda los datos del contenedor, copia los `.json` y reinicia la app).
+4. La clave del admin pasa a ser la de `backend/.env` del contenedor.
+5. Cambiar a la nueva IP: `domain_master` del cargador (`ws://<IP-contenedor>:3000/ocpp`) y
+   Configuración → URL pública (`http://<IP-contenedor>:3001`). Los QR impresos con la IP
+   anterior dejan de funcionar: reimprimirlos, o dar al contenedor la misma IP que tenía la VM.
+6. Cuando todo funcione, apagar la VM Windows o deshabilitar su tarea "PM2 Electrolineras".
