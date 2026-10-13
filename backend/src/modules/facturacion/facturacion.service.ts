@@ -1,23 +1,21 @@
 import { Injectable } from '@nestjs/common';
-
-// Comisión de respaldo, en porcentaje, si el operador aún no tiene una pactada.
-// Ver docs/especificacion-tecnica.md: la comisión definitiva queda sujeta a
-// negociación comercial por operador.
-const COMISION_POR_DEFECTO = 20; // %
+import { ConfiguracionService } from '../configuracion/configuracion.service';
 
 @Injectable()
 export class FacturacionService {
+  constructor(private readonly configuracion: ConfiguracionService) {}
+
   calcularCosto(kwh_consumidos: number, tarifa_por_kwh: number) {
     return Number((kwh_consumidos * tarifa_por_kwh).toFixed(2));
   }
 
-  // comision_pactada es un porcentaje (20 = 20 %), igual que en la entidad Operador
-  // y en el panel. No es una fracción.
+  // comision_pactada es un porcentaje (20 = 20 %). Si el operador no tiene una pactada,
+  // se usa la comisión por defecto de Configuración (negociación comercial por operador).
   calcularReparto(monto_total: number, comision_pactada: number | null) {
-    const porcentaje = comision_pactada ?? COMISION_POR_DEFECTO;
+    const porcentaje = comision_pactada ?? this.configuracion.obtener().comision_por_defecto;
     const comision_plataforma = Number(((monto_total * porcentaje) / 100).toFixed(2));
     const monto_operador = Number((monto_total - comision_plataforma).toFixed(2));
-    return { comision_plataforma, monto_operador };
+    return { comision_plataforma, monto_operador, porcentaje_comision: porcentaje };
   }
 
   // TODO: integrar con la API de Wompi:
@@ -29,15 +27,13 @@ export class FacturacionService {
     comision_pactada: number | null;
     cuenta_beneficiario: string | null;
   }) {
-    const { comision_plataforma, monto_operador } = this.calcularReparto(
-      params.monto_total,
-      params.comision_pactada,
-    );
+    const reparto = this.calcularReparto(params.monto_total, params.comision_pactada);
     return {
       estado_pago: 'pendiente' as const,
       monto_total: params.monto_total,
-      comision_plataforma,
-      monto_operador,
+      comision_plataforma: reparto.comision_plataforma,
+      monto_operador: reparto.monto_operador,
+      porcentaje_comision: reparto.porcentaje_comision,
       referencia_pasarela: null,
     };
   }

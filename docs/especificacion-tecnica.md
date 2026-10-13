@@ -88,7 +88,7 @@ equipo recibido: `SSWL_DC-V1.0.69`.
 
 | Ajuste del cargador | Pantalla | Valor en la plataforma |
 |---|---|---|
-| `domain_master` | Basic Settings, pág. 1 | URL del gateway OCPP propio, ej. `ws://<servidor>:9000/ocpp` (laboratorio) o `wss://ocpp.<dominio>/ocpp` (producción) |
+| `domain_master` | Basic Settings, pág. 1 | URL del gateway OCPP de la plataforma: `ws://<servidor>:3000/ocpp` (mismo puerto de la API) o `wss://ocpp.<dominio>/ocpp` en producción con TLS |
 | `pile_number_master` | Basic Settings, pág. 1 | Igual al `numero_serie` registrado en el panel de Cargadores |
 | `qr_code_type` | Device Configuration | `0` (QR personalizado) |
 | `QR code` | Basic Settings, pág. 2 | URL de la app de usuario: `https://<app>/c/<numero_serie>` |
@@ -119,3 +119,12 @@ Flujo implementado (web responsive, rutas sin el menú del panel):
 
 Mientras el gateway OCPP no esté conectado, el consumo se **simula** a 30 kW
 (`SIMULAR_MEDICION`, activo por defecto) y la app lo indica en pantalla.
+
+## 10. Roles y acceso al panel
+
+- **Administrador** (plataforma IIT): ve todos los operadores, cargadores y sesiones; gestiona
+  usuarios, configuración y la consola OCPP; pacta la comisión de cada operador.
+- **Operador** (dueño de cargadores): se registra solo (si Configuración lo permite) o lo crea
+  un administrador; ve únicamente sus cargadores, sesiones e ingresos; edita los datos de su
+  empresa pero no su comisión.
+- **Usuario final**: no tiene cuenta; usa la app desde el QR del cargador.

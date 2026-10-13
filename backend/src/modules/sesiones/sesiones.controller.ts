@@ -1,32 +1,47 @@
-import { Controller, Get, Post, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, Query, HttpCode } from '@nestjs/common';
+import { alcanceOperador, Publico, Usuario, UsuarioActual } from '../../comun/decoradores';
 import { SesionesService } from './sesiones.service';
 
-@Controller('sesiones')
+// Las rutas de una sesión concreta son públicas: la app del usuario final las usa sin
+// login y el id (UUID) no es adivinable. El listado y las estadísticas exigen login.
+@Controller()
 export class SesionesController {
   constructor(private readonly sesionesService: SesionesService) {}
 
-  @Get()
-  listar() {
-    return this.sesionesService.listar();
+  @Get('sesiones')
+  listar(@Usuario() usuario: UsuarioActual) {
+    return this.sesionesService.listar(alcanceOperador(usuario));
   }
 
-  @Get(':id')
+  @Get('estadisticas')
+  estadisticas(@Usuario() usuario: UsuarioActual, @Query('dias') dias?: string) {
+    const n = Math.min(Math.max(Number(dias) || 14, 1), 90);
+    return this.sesionesService.estadisticas(alcanceOperador(usuario), n);
+  }
+
+  @Publico()
+  @Get('sesiones/:id')
   obtener(@Param('id') id: string) {
     return this.sesionesService.obtener(id);
   }
 
   // Se identifica el cargador por numero_serie (desde el QR) o por cargador_id.
-  @Post()
+  @Publico()
+  @Post('sesiones')
   iniciar(@Body() body: { cargador_id?: string; numero_serie?: string; usuario_id: string }) {
     return this.sesionesService.iniciar(body);
   }
 
-  @Post(':id/finalizar')
+  @Publico()
+  @HttpCode(200)
+  @Post('sesiones/:id/finalizar')
   finalizar(@Param('id') id: string, @Body() body: { kwh_consumidos?: number }) {
     return this.sesionesService.finalizar(id, body?.kwh_consumidos);
   }
 
-  @Post(':id/pagar')
+  @Publico()
+  @HttpCode(200)
+  @Post('sesiones/:id/pagar')
   pagar(@Param('id') id: string) {
     return this.sesionesService.pagar(id);
   }

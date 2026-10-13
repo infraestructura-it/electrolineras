@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { cargadoresApi, sesionesApi, Cargador, formatoCOP } from '@/lib/api';
+import { cargadoresApi, sesionesApi, Cargador, ErrorApi, formatoCOP } from '@/lib/api';
 import { leerSesionGuardada, guardarSesion, leerContacto, guardarContacto } from '@/lib/almacenLocal';
 
 // Pantalla que abre el QR del cargador: https://<app>/c/<numero_serie>
@@ -25,7 +25,7 @@ export default function CargadorPublico() {
       .obtenerPorSerie(serie)
       .then(setCargador)
       .catch((e: Error) => {
-        if (/no existe/i.test(e.message)) setNoEncontrado(true);
+        if (e instanceof ErrorApi && e.estado === 404) setNoEncontrado(true);
         else setError('No pudimos conectarnos con la plataforma. Revisa tu conexión e inténtalo de nuevo.');
       });
   }, [serie]);
@@ -87,8 +87,8 @@ export default function CargadorPublico() {
           <div>
             <dt>Estado</dt>
             <dd>
-              <span className={`badge ${cargador.estado}`}>
-                {cargador.estado === 'activo' ? 'disponible' : cargador.estado.replace('_', ' ')}
+              <span className={`estado ${cargador.estado === 'activo' ? 'ok' : cargador.estado === 'en_falla' ? 'falla' : ''}`}>
+                {cargador.estado === 'activo' ? 'Disponible' : cargador.estado === 'en_falla' ? 'En falla' : 'Inactivo'}
               </span>
             </dd>
           </div>
@@ -120,8 +120,8 @@ export default function CargadorPublico() {
             required
           />
 
-          <button className="app-boton" type="submit" disabled={iniciando}>
-            {iniciando ? 'Iniciando…' : 'Iniciar carga'}
+          <button className="btn app-boton" type="submit" disabled={iniciando}>
+            {iniciando ? 'Contactando el cargador…' : 'Iniciar carga'}
           </button>
           {error && <p className="app-error">{error}</p>}
         </form>

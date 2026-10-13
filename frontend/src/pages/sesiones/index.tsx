@@ -1,85 +1,134 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
-import { sesionesApi, SesionCarga, formatoCOP, formatoKwh } from '@/lib/api';
+import { Square } from 'lucide-react';
+import { EstadoSesionBadge, Encabezado, MensajeError, useDatos } from '@/components/ui';
+import { formatoCOP, formatoFecha, formatoKwh, SesionCarga, sesionesApi } from '@/lib/api';
 
-const INTERVALO_MS = 5000;
+const FILTROS: { valor: string; texto: string; incluye: (s: SesionCarga) => boolean }[] = [
+  { valor: 'todas', texto: 'Todas', incluye: () => true },
+  { valor: 'activas', texto: 'Activas', incluye: (s) => ['iniciando', 'en_curso', 'deteniendo'].includes(s.estado) },
+  { valor: 'pendientes', texto: 'Pago pendiente', incluye: (s) => s.estado === 'finalizada' && (!s.pago || s.pago.estado_pago === 'pendiente') },
+  { valor: 'fallidas', texto: 'Fallidas', incluye: (s) => s.estado === 'fallida' },
+];
 
 export default function SesionesPage() {
-  const [sesiones, setSesiones] = useState<SesionCarga[]>([]);
+  const sesiones = useDatos(() => sesionesApi.listar(), 4000);
+  const [filtro, setFiltro] = useState('todas');
+  const [busqueda, setBusqueda] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  async function cargar() {
-    try {
-      setSesiones(await sesionesApi.listar());
-      setError(null);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-
-  useEffect(() => {
-    cargar();
-    const sondeo = setInterval(cargar, INTERVALO_MS);
-    return () => clearInterval(sondeo);
-  }, []);
-
-  async function finalizar(s: SesionCarga) {
-    if (!window.confirm(`¿Finalizar la carga en ${s.numero_serie}?`)) return;
+  async function detener(s: SesionCarga) {
+    if (!window.confirm(`¿Detener la carga en ${s.numero_serie}?`)) return;
     try {
       await sesionesApi.finalizar(s.id);
-      await cargar();
+      sesiones.recargar();
     } catch (e) {
       setError((e as Error).message);
     }
   }
 
-  const enCurso = sesiones.filter((s) => s.estado === 'en_curso').length;
+  const criterio = FILTROS.find((f) => f.valor === filtro)!;
+  const texto = busqueda.trim().toLowerCase();
+  const lista = (sesiones.datos ?? []).filter(
+    (s) => criterio.incluye(s) && (!texto || s.numero_serie.toLowerCase().includes(texto) || s.usuario_id.toLowerCase().includes(texto)),
+  );
 
   return (
     <>
-      <h1>Sesiones de carga</h1>
-      <p>
-        Cargas iniciadas por los usuarios desde el QR del cargador. Se actualiza cada{' '}
-        {INTERVALO_MS / 1000} s · {enCurso} en curso.
-      </p>
+      <Encabezado titulo="Sesiones de carga" descripcion="Cargas iniciadas desde el QR o con tarjeta RFID. Se actualiza cada 4 segundos." />
 
-      {error && <p className="error">{error}</p>}
+      <MensajeError>{error ?? sesiones.error}</MensajeError>
 
-      {sesiones.map((s) => (
-        <div className="card" key={s.id}>
-          <div className="card-title">
-            {s.numero_serie} <span className={`badge ${s.estado}`}>{s.estado}</span>{' '}
-            {s.pago && <span className={`badge ${s.pago.estado_pago}`}>pago {s.pago.estado_pago}</span>}
-          </div>
-          <div className="card-meta">
-            {s.usuario_id} · {new Date(s.inicio).toLocaleString('es-CO')} · {formatoKwh(s.kwh_consumidos)} ·{' '}
-            {formatoCOP(s.costo_total ?? s.costo_estimado)}
-            {s.estado === 'en_curso' && ' (estimado)'}
-          </div>
-          {s.pago && (
-            <div className="card-meta">
-              Comisión plataforma {formatoCOP(s.pago.comision_plataforma)} · Operador{' '}
-              {formatoCOP(s.pago.monto_operador)}
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: 12, marginTop: 10, alignItems: 'center' }}>
-            {s.estado === 'en_curso' && (
-              <button type="button" onClick={() => finalizar(s)}>
-                Finalizar
+      <section className="superficie">
+        <div className="superficie-titulo" style={{ flexWrap: 'wrap' }}>
+          <div className="acciones" role="group" aria-label="Filtrar sesiones">
+            {FILTROS.map((f) => (
+              <button key={f.valor} className={`btn chico ${filtro === f.valor ? '' : 'sec'}`} onClick={() => setFiltro(f.valor)} aria-pressed={filtro === f.valor}>
+                {f.texto}
               </button>
-            )}
-            <Link href={`/carga/${s.id}`} style={{ color: 'var(--accent)', fontSize: 13 }}>
-              Ver como usuario
-            </Link>
+            ))}
           </div>
+          <input
+            type="search"
+            placeholder="Buscar por cargador o usuario"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            style={{ maxWidth: 280 }}
+            aria-label="Buscar sesiones"
+          />
         </div>
-      ))}
 
-      {sesiones.length === 0 && !error && (
-        <p className="card-meta">
-          Aún no hay sesiones. Abre la URL del QR de un cargador (en Cargadores) para iniciar una.
-        </p>
-      )}
+        {lista.length ? (
+          <div className="tabla-envoltura">
+            <table className="tabla">
+              <thead>
+                <tr>
+                  <th>Inicio</th>
+                  <th>Cargador</th>
+                  <th>Usuario</th>
+                  <th>Estado</th>
+                  <th className="num">Energía</th>
+                  <th className="num">Valor</th>
+                  <th>Pago</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {lista.map((s) => (
+                  <tr key={s.id}>
+                    <td>
+                      {formatoFecha(s.inicio)}
+                      <div className="secundario">{s.origen === 'rfid' ? 'Tarjeta RFID' : 'App (QR)'}{s.medicion_simulada ? ', medición simulada' : ''}</div>
+                    </td>
+                    <td className="mono">{s.numero_serie}</td>
+                    <td>{s.usuario_id}</td>
+                    <td>
+                      <EstadoSesionBadge estado={s.estado} />
+                      {s.motivo && s.estado === 'fallida' && <div className="secundario">{s.motivo}</div>}
+                    </td>
+                    <td className="num">
+                      {formatoKwh(s.kwh_consumidos)}
+                      {s.potencia_kw != null && s.estado === 'en_curso' && <div className="secundario">{s.potencia_kw} kW</div>}
+                    </td>
+                    <td className="num">
+                      {formatoCOP(s.costo_total ?? s.costo_estimado)}
+                      {s.costo_total == null && s.estado !== 'fallida' && <div className="secundario">estimado</div>}
+                    </td>
+                    <td>
+                      {s.pago ? (
+                        <span className={`estado ${s.pago.estado_pago === 'aprobado' ? 'ok' : s.pago.estado_pago === 'rechazado' ? 'falla' : 'alerta'}`}>
+                          {s.pago.estado_pago === 'pendiente' ? 'Pendiente' : s.pago.estado_pago === 'aprobado' ? 'Aprobado' : 'Rechazado'}
+                        </span>
+                      ) : s.estado === 'finalizada' ? (
+                        <span className="estado alerta">Sin pagar</span>
+                      ) : (
+                        <span className="secundario">—</span>
+                      )}
+                    </td>
+                    <td>
+                      <div className="acciones" style={{ flexWrap: 'nowrap' }}>
+                        {['en_curso', 'iniciando'].includes(s.estado) && (
+                          <button className="btn chico peligro" onClick={() => detener(s)}>
+                            <Square size={13} /> Detener
+                          </button>
+                        )}
+                        <Link className="btn chico sec" href={`/carga/${s.id}`} target="_blank">
+                          Ver como usuario
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="vacio">
+            <h2>{sesiones.datos?.length ? 'Ninguna sesión con este filtro' : 'Aún no hay sesiones'}</h2>
+            <p>Abre el QR de un cargador desde la página Cargadores para iniciar una carga de prueba.</p>
+          </div>
+        )}
+      </section>
     </>
   );
 }

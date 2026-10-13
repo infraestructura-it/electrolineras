@@ -38,10 +38,11 @@ npm run start:dev
 ## Pendientes inmediatos
 
 1. ~~Confirmar versión OCPP del MDXDC3001~~ → **OCPP 1.6J** (ws/wss), según el manual del equipo.
-2. Conectar PostgreSQL real (TypeORM) — las entidades ya están definidas; hoy los datos viven en memoria.
-3. Implementar el gateway OCPP 1.6J y conectar el cargador real (hoy la medición se simula a 30 kW).
+2. Conectar PostgreSQL real (TypeORM) — las entidades ya están definidas; hoy los datos se guardan en archivos JSON (`backend/data`).
+3. ~~Gateway OCPP 1.6J~~ → implementado (`ws://<servidor>:3000/ocpp/<serie>`) con consola de comandos y simulador; falta probarlo con el MDXDC3001 real.
 4. Integrar la API de cobro y dispersión de pagos de Wompi (hoy el pago queda `pendiente`).
 5. ~~App de usuario~~ → versión web lista: QR → iniciar carga → carga en vivo → pagar → recibo.
+6. ~~Panel~~ → barra lateral, login con roles (administrador / operador), dashboard con gráficos, QR descargable, consola OCPP y configuración.
 
 ## Producción con PM2
 
