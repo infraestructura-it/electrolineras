@@ -35,6 +35,8 @@ Para traer cambios más adelante: `git pull` dentro de `C:\pruebas\electrolinera
 | `s` | Detener la carga desde el cargador (`StopTransaction`) |
 | `f` | Simular una falla (`StatusNotification` Faulted) |
 | `a` | Volver a disponible (`Available`) |
+| `c [seg]` | Cortar la red N segundos (por defecto 30). La carga sigue; si se detiene sin red, el `StopTransaction` se guarda y se envía al reconectar |
+| `x` | Reinicio que **pierde** la transacción (como un firmware defectuoso): el servidor la cierra solo con la última lectura |
 | `q` | Salir |
 
 ## Pruebas sugeridas
@@ -45,4 +47,6 @@ Para traer cambios más adelante: `git pull` dentro de `C:\pruebas\electrolinera
 | Carga RFID | `t AF22FF0B`, esperar, `s` | Sesiones: `en_curso` con kWh subiendo → `finalizada` |
 | Carga por QR | Abrir `http://<servidor>:3001/c/<serie>` → Iniciar → Detener → Pagar | La app en vivo, sesión pagada (pendiente) y proforma emitida |
 | Falla | `f` y luego `a` | Cargador `en_falla` y de vuelta a activo |
+| Corte de red | `t AF22FF0B`, `c 20`, esperar a que reconecte, `s` | La sesión sigue `en_curso` tras el corte y cierra con todos los kWh |
+| Transacción perdida | `t AF22FF0B`, luego `x` | Detener en la app cierra la sesión al instante; sin tocar nada, se cierra sola en ~2 min |
 | Comandos | Consola OCPP → `GetConfiguration`, `TriggerMessage`, `Reset` | La respuesta del simulador en el registro de mensajes |

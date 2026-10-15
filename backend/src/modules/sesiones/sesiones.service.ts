@@ -62,6 +62,13 @@ export interface ReferenciaProforma {
 
 const ESPERA_INICIO_MS = 3 * 60_000; // si el cargador no envía StartTransaction en 3 min, la sesión falla
 const PERSISTIR_MEDICION_CADA_MS = 15_000;
+// Si el cargador reporta el conector libre (Available/Finishing) durante este tiempo con una
+// transacción todavía abierta en el servidor, se da por perdido el StopTransaction (el cargador
+// se reinició o perdió la transacción) y la sesión se cierra con la última lectura recibida.
+const GRACIA_SIN_STOP_MS = 90_000;
+const REVISION_HUERFANAS_MS = 30_000;
+// Estados del conector en los que todavía puede haber una carga en curso.
+const ESTADOS_CARGANDO = ['Preparing', 'Charging', 'SuspendedEV', 'SuspendedEVSE'];
 
 // Datos persistidos en data/sesiones.json (ver AlmacenService).
 // TODO: reemplazar por el repositorio TypeORM de SesionCarga al conectar PostgreSQL.
@@ -87,6 +94,20 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
 
   onModuleInit() {
     this.ocpp.registrarManejador(this);
+    setInterval(() => this.cerrarHuerfanas(), REVISION_HUERFANAS_MS).unref();
+  }
+
+  // Sesiones OCPP abiertas cuyo cargador ya reporta el conector libre y nunca envió StopTransaction.
+  private cerrarHuerfanas() {
+    for (const s of this.sesiones.values()) {
+      if (s.medicion !== 'ocpp' || !['en_curso', 'deteniendo'].includes(s.estado)) continue;
+      const conector = this.ocpp.estadoConector(s.numero_serie);
+      if (!conector || ESTADOS_CARGANDO.includes(conector.status) || conector.status === 'Faulted') continue;
+      // Solo cuenta un estado reportado DESPUÉS de iniciar la sesión y que lleve la gracia completa.
+      if (Date.parse(conector.fecha) < Date.parse(s.inicio)) continue;
+      if (Date.now() - Date.parse(conector.fecha) < GRACIA_SIN_STOP_MS) continue;
+      this.cerrar(s, new Date().toISOString(), `Cerrada: el cargador quedó ${conector.status} sin enviar StopTransaction; se usó la última lectura`);
+    }
   }
 
   registrarProformas(ganchos: {
@@ -192,6 +213,13 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
         .enviarComando(sesion.numero_serie, 'RemoteStopTransaction', { transactionId: sesion.transaction_id })
         .catch((e: Error) => ({ tipo: 'CALLERROR' as const, codigo: 'Error', descripcion: e.message, detalles: null }));
       if (respuesta.tipo !== 'CALLRESULT' || respuesta.payload.status !== 'Accepted') {
+        // Si el conector ya no está cargando, el cargador perdió la transacción (reinicio, corte):
+        // no hay nada que detener, así que se cierra con la última lectura en vez de quedar colgada.
+        const conector = this.ocpp.estadoConector(sesion.numero_serie);
+        if (respuesta.tipo === 'CALLRESULT' && conector && !ESTADOS_CARGANDO.includes(conector.status)) {
+          this.cerrar(sesion, new Date().toISOString(), 'Cerrada: el cargador ya no tenía la transacción; se usó la última lectura');
+          return this.vista(sesion);
+        }
         if (sesion.estado === 'deteniendo') sesion.estado = 'en_curso';
         this.persistir();
         throw new ConflictException('El cargador no aceptó la orden de detener. Inténtalo de nuevo.');
@@ -326,7 +354,10 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
     );
     if (!sesion || !ACTIVAS.includes(sesion.estado)) return;
     if (sesion.meter_start_wh != null) sesion.kwh_consumidos = this.kwhDesde(sesion.meter_start_wh, d.meterStopWh);
-    this.cerrar(sesion, new Date().toISOString(), d.motivo ? `Detenida (${d.motivo})` : 'Detenida en el cargador');
+    // Hora del cargador (sincronizada en el BootNotification): un cierre que llega tarde, tras un
+    // corte de red, conserva la hora real en que terminó la carga.
+    const fin = Number.isFinite(Date.parse(d.fecha)) && Date.parse(d.fecha) <= Date.now() + 60_000 ? new Date(d.fecha).toISOString() : new Date().toISOString();
+    this.cerrar(sesion, fin, d.motivo ? `Detenida (${d.motivo})` : 'Detenida en el cargador');
   }
 
   // ---------- Estadísticas para el dashboard ----------

@@ -10,6 +10,8 @@
 //   t <idTag>   pasar una tarjeta RFID (Authorize + StartTransaction)
 //   s           detener la carga desde el cargador (StopTransaction)
 //   f           simular una falla (StatusNotification Faulted) · a = volver a Available
+//   c [seg]     cortar la red N segundos (def. 30): la carga sigue y el cierre se envía al volver
+//   x           reinicio que PIERDE la transacción (firmware defectuoso): prueba la recuperación del servidor
 //   q           salir
 'use strict';
 
@@ -46,10 +48,22 @@ let disponible = true;
 let temporizadorHeartbeat;
 let temporizadorMedicion;
 const pendientes = new Map();
+// Mensajes de transacción que no se pueden perder: si no hay conexión se guardan y se envían
+// en orden al reconectar, como exige OCPP 1.6 a un cargador real.
+const TRANSACCIONALES = ['StartTransaction', 'StopTransaction'];
+const cola = [];
+let sinRedHasta = 0;
 
 const log = (...m) => console.log(new Date().toLocaleTimeString('es-CO'), ...m);
 
+const enLinea = () => ws && ws.readyState === WebSocket.OPEN;
+
 function llamar(accion, payload) {
+  if (!enLinea()) {
+    if (!TRANSACCIONALES.includes(accion)) return Promise.resolve(null);
+    log('⏸ Sin conexión: se guarda', accion, 'para enviarlo al reconectar');
+    return new Promise((resolver) => cola.push({ accion, payload, resolver }));
+  }
   const id = randomUUID();
   ws.send(JSON.stringify([2, id, accion, payload]));
   log('→', accion, JSON.stringify(payload));
@@ -71,6 +85,7 @@ function programarHeartbeat() {
 }
 
 function enviarMedicion() {
+  if (!enLinea()) return null; // el medidor sigue sumando; la lectura sale cuando vuelva la red
   return llamar('MeterValues', {
     connectorId: 1,
     transactionId: transaccion?.id,
@@ -140,7 +155,11 @@ function atender(id, accion, p) {
     case 'Reset':
       responder(id, { status: 'Accepted' });
       log(`Reinicio ${p.type}: reconectando en 3 s`);
-      return setTimeout(() => ws.close(1012, 'Reset'), 500);
+      // OCPP: antes de reiniciar, el cargador cierra la transacción en curso.
+      return setTimeout(async () => {
+        if (transaccion) await detenerCarga(p.type === 'Hard' ? 'HardReset' : 'SoftReset');
+        ws.close(1012, 'Reset');
+      }, 500);
     case 'ChangeAvailability':
       disponible = p.type === 'Operative';
       responder(id, { status: transaccion ? 'Scheduled' : 'Accepted' });
@@ -186,7 +205,19 @@ async function boot() {
   if (r?.status !== 'Accepted') return log('El servidor rechazó el cargador (¿está registrado en el panel?)');
   config.HeartbeatInterval = String(r.interval ?? 300);
   programarHeartbeat();
-  await enviarEstado(disponible ? 'Available' : 'Unavailable');
+  // Primero lo que quedó guardado sin conexión (inicio/cierre de transacciones), en orden.
+  while (cola.length) {
+    const m = cola.shift();
+    log('▶ Enviando lo guardado:', m.accion);
+    m.resolver(await llamar(m.accion, m.payload));
+  }
+  if (transaccion) {
+    await enviarEstado('Charging');
+    enviarMedicion();
+    log(`La carga siguió sin conexión · transacción ${transaccion.id}`);
+  } else {
+    await enviarEstado(disponible ? 'Available' : 'Unavailable');
+  }
 }
 
 let ultimoRechazo = null;
@@ -230,10 +261,14 @@ function conectar() {
   });
   ws.on('close', (codigo) => {
     clearInterval(temporizadorHeartbeat);
-    clearInterval(temporizadorMedicion);
-    transaccion = null;
-    log(`Conexión cerrada (${codigo}). Reintentando en ${reintentoMs / 1000} s…`);
-    setTimeout(conectar, reintentoMs);
+    // La carga NO se detiene por perder la red: el medidor sigue y el cierre se guarda en la cola.
+    for (const [mid, p] of pendientes) {
+      pendientes.delete(mid);
+      p.resolver(null);
+    }
+    const espera = Math.max(reintentoMs, sinRedHasta - Date.now());
+    log(`Conexión cerrada (${codigo}). Reintentando en ${Math.round(espera / 1000)} s…${transaccion ? ' (la carga sigue)' : ''}`);
+    setTimeout(conectar, espera);
   });
   ws.on('error', (e) => {
     if (!ultimoRechazo) log('Error:', e.message);
@@ -250,6 +285,18 @@ readline.createInterface({ input: process.stdin }).on('line', (linea) => {
   } else if (cmd === 's') detenerCarga('Local');
   else if (cmd === 'f') enviarEstado('Faulted', 'GroundFailure');
   else if (cmd === 'a') enviarEstado('Available');
+  else if (cmd === 'c') {
+    const seg = Number(valor) || 30;
+    sinRedHasta = Date.now() + seg * 1000;
+    log(`✂ Corte de red por ${seg} s`);
+    ws.terminate();
+  } else if (cmd === 'x') {
+    clearInterval(temporizadorMedicion);
+    if (transaccion) log(`⚠ Reinicio con pérdida de la transacción ${transaccion.id} (no se enviará StopTransaction)`);
+    transaccion = null;
+    cola.length = 0;
+    ws.close(1012, 'Reinicio');
+  }
   else if (cmd === 'q') process.exit(0);
 });
 

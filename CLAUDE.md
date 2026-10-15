@@ -123,8 +123,13 @@ Pública = sin login. Admin = solo administradores. El resto exige login (con al
   `StopTransaction` la cierra con la lectura final. Una tarjeta RFID autorizada crea su
   propia sesión (`origen: 'rfid'`). Un `RemoteStartTransaction` enviado desde la consola OCPP
   deja su `idTag` aceptado 5 minutos para ese cargador y crea una sesión `origen: 'panel'`.
+- Transacciones huérfanas (el cargador se reinició y no envió `StopTransaction`): si el conector
+  queda `Available`/`Finishing` 90 s con la sesión abierta, una revisión cada 30 s la cierra con la
+  última lectura; y si "Detener" recibe `Rejected` con el conector libre, se cierra al instante.
+  La hora de fin es la del `StopTransaction` (reloj del cargador), no la de llegada del mensaje.
 - Probar sin el equipo: carpeta `simulador/` (ver su README): `npm install` y
-  `npm start -- ws://<servidor>:3000/ocpp/ws <serie>` (teclas `t <tarjeta>`, `s`, `f`, `a`, `q`).
+  `npm start -- ws://<servidor>:3000/ocpp/ws <serie>` (teclas `t <tarjeta>`, `s`, `f`, `a`,
+  `c [seg]` corte de red, `x` reinicio que pierde la transacción, `q`).
   Corre en cualquier equipo con Node 18+, sin instalar el backend.
 
 ## Proformas (prefacturas)

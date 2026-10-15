@@ -173,6 +173,13 @@ export class OcppGatewayService implements OnModuleDestroy {
     return this.conexiones.get(numero_serie)?.ws.readyState === WebSocket.OPEN;
   }
 
+  // Último StatusNotification del conector (null si el cargador no está conectado o no lo ha enviado).
+  estadoConector(numero_serie: string, connectorId = 1): { status: string; fecha: string } | null {
+    if (!this.estaConectado(numero_serie)) return null;
+    const e = this.conexiones.get(numero_serie)?.conectores.get(connectorId);
+    return e ? { status: e.status, fecha: e.fecha } : null;
+  }
+
   listarConexiones(series: string[] | null) {
     return [...this.conexiones.values()]
       .filter((c) => !series || series.includes(c.numero_serie))
