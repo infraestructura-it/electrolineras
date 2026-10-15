@@ -789,3 +789,108 @@ table.tabla { width: 100%; border-collapse: collapse; font-size: 14px; }
   .hoja-escalada { height: auto !important; overflow: visible; }
   .hoja-escalada-interior { transform: none !important; width: auto !important; }
 }
+
+/* ---------- Mapas (Leaflet) ---------- */
+.mapa {
+  border-radius: var(--radio-panel);
+  overflow: hidden;
+  border: 1px solid var(--linea);
+  background: var(--tinta-2);
+  position: relative;
+  z-index: 0; /* los modales quedan por encima de los controles del mapa */
+}
+.mapa-cargando { display: grid; place-items: center; color: var(--tenue); }
+.mapa .leaflet-container { background: var(--tinta-2); font-family: var(--fuente); }
+.mapa .leaflet-control-attribution { background: rgba(15, 24, 40, 0.75); color: var(--tenue); font-size: 10px; }
+.mapa .leaflet-control-attribution a { color: var(--texto-2); }
+.mapa .leaflet-bar a { background: var(--panel); color: var(--texto); border-color: var(--linea); }
+.mapa .leaflet-bar a:hover { background: var(--panel-2); }
+.mapa .leaflet-popup-content-wrapper, .mapa .leaflet-popup-tip {
+  background: var(--panel);
+  color: var(--texto);
+  border: 1px solid var(--linea);
+  box-shadow: var(--sombra-capa);
+}
+.mapa .leaflet-popup-content { margin: 12px 14px; font-size: 13px; line-height: 1.45; }
+.mapa .leaflet-popup-close-button { color: var(--tenue) !important; }
+.pin-contenedor { background: none; border: 0; }
+.pin {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  border: 2px solid rgba(15, 24, 40, 0.9);
+  box-shadow: 0 4px 12px rgba(3, 8, 18, 0.5);
+}
+.pin > span { transform: rotate(45deg); font-size: 12px; font-weight: 700; color: #0f1828; }
+.pin-voltaje { background: var(--voltaje); }
+.pin-flujo { background: var(--flujo); }
+.pin-falla { background: var(--falla); }
+.pin-tenue { background: var(--tenue); }
+.pin-yo {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #4c8dff;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 6px rgba(76, 141, 255, 0.25);
+}
+.nav-externo { margin-left: auto; color: var(--tenue); }
+.sitio-nombre { font-weight: 600; font-size: 1.02rem; }
+.cargador.enfocada { border-color: var(--voltaje); box-shadow: 0 0 0 1px var(--voltaje); }
+.aviso-linea {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: var(--radio-control);
+  background: var(--voltaje-suave);
+  color: var(--texto-2);
+  font-size: 0.92rem;
+}
+
+/* ---------- Monitor en vivo (pantalla aparte) ---------- */
+.monitor { min-height: 100vh; padding: 22px clamp(16px, 3vw, 36px) 28px; display: flex; flex-direction: column; gap: 18px; }
+.monitor-cabeza { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.monitor-marca { display: flex; align-items: center; gap: 12px; }
+.monitor-marca h1 { margin: 0; font-size: 1.45rem; }
+.monitor-marca .secundario { text-transform: capitalize; }
+.monitor-controles { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.monitor-controles select {
+  background: var(--panel); color: var(--texto); border: 1px solid var(--linea); border-radius: var(--radio-control);
+  padding: 8px 12px; font: inherit;
+}
+.monitor-resumen { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.monitor-cifra { background: var(--panel); border: 1px solid var(--linea); border-radius: var(--radio-panel); padding: 14px 16px; }
+.monitor-cifra-valor { font-size: 1.9rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.monitor-cifra-etiqueta { color: var(--tenue); font-size: 0.86rem; margin-top: 4px; }
+.monitor-cifra.disponible .monitor-cifra-valor { color: var(--flujo); }
+.monitor-cifra.cargando .monitor-cifra-valor { color: var(--voltaje); }
+.monitor-cifra.falla .monitor-cifra-valor { color: var(--falla); }
+.monitor-cifra.apagado .monitor-cifra-valor { color: var(--tenue); }
+.monitor-sitio h2 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 1.1rem; margin: 6px 0 10px; }
+.monitor-rejilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.monitor-tarjeta {
+  background: var(--panel); border: 1px solid var(--linea); border-radius: var(--radio-panel);
+  padding: 16px; display: flex; flex-direction: column; gap: 14px; border-top: 4px solid var(--tenue);
+}
+.monitor-tarjeta.disponible { border-top-color: var(--flujo); }
+.monitor-tarjeta.cargando { border-top-color: var(--voltaje); }
+.monitor-tarjeta.falla { border-top-color: var(--falla); }
+.monitor-tarjeta-cabeza { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.monitor-estado { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 0.9rem; white-space: nowrap; }
+.disponible .monitor-estado { color: var(--flujo); }
+.cargando .monitor-estado { color: var(--voltaje); }
+.falla .monitor-estado { color: var(--falla); }
+.apagado .monitor-estado { color: var(--tenue); }
+.monitor-sesion { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+.monitor-grande { font-size: 1.35rem; font-weight: 700; color: var(--voltaje); font-variant-numeric: tabular-nums; }
+.monitor-usuario { grid-column: 1 / -1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.monitor-libre { min-height: 58px; display: flex; align-items: center; }
+.monitor-tarjeta-pie { display: flex; align-items: center; gap: 8px; color: var(--tenue); font-size: 0.82rem; border-top: 1px solid var(--linea-suave); padding-top: 10px; }
+.monitor-pie { margin-top: auto; text-align: center; }

@@ -68,21 +68,53 @@ const enviar = (method: string, body?: unknown): RequestInit => ({
 
 // ---------- Tipos ----------
 
-export type Rol = 'admin' | 'operador';
+// admin = administrador de la plataforma; administrador = de una empresa; operario = de una empresa.
+export type Rol = 'admin' | 'administrador' | 'operario';
+
+export const NOMBRE_ROL: Record<Rol, string> = {
+  admin: 'Administrador de plataforma',
+  administrador: 'Administrador de empresa',
+  operario: 'Operario',
+};
 
 export interface Usuario {
   id: string;
   email: string;
   nombre: string;
   rol: Rol;
-  operador_id: string | null;
+  operador_id: string | null; // empresa
+  zona_id: string | null; // solo operario
   activo?: boolean;
   creado?: string;
 }
 
+export interface Zona {
+  id: string;
+  nombre: string;
+  descripcion: string | null;
+  creado: string;
+}
+
+export interface Electrolinera {
+  id: string;
+  nombre: string;
+  operador_id: string;
+  zona_id: string | null;
+  direccion: string | null;
+  ciudad: string | null;
+  latitud: number | null;
+  longitud: number | null;
+  horario: string | null;
+  descripcion: string | null;
+  creado: string;
+}
+
+export type DatosElectrolinera = Partial<Omit<Electrolinera, 'id' | 'creado'>>;
+
 export interface Operador {
   id: string;
   nombre: string;
+  nit: string | null;
   email_contacto: string | null;
   cuenta_beneficiario: string | null;
   comision_pactada: number | null; // porcentaje: 20 = 20 %
@@ -90,15 +122,107 @@ export interface Operador {
 
 export type EstadoCargador = 'activo' | 'inactivo' | 'en_falla';
 
+export type VersionOcpp = 'auto' | '1.6' | '2.0.1';
+
 export interface Cargador {
+  id: string;
+  numero_serie: string;
+  modelo: string;
+  ubicacion: string | null; // punto dentro de la electrolinera
+  estado: EstadoCargador;
+  tarifa_por_kwh: number | null; // COP por kWh
+  operador_id: string;
+  electrolinera_id: string | null;
+  version_ocpp: VersionOcpp;
+  potencia_kw: number;
+}
+
+// GET /cargadores/:numero_serie (público, para la app del conductor)
+export interface CargadorPublico {
   id: string;
   numero_serie: string;
   modelo: string;
   ubicacion: string | null;
   estado: EstadoCargador;
-  tarifa_por_kwh: number | null; // COP por kWh
+  tarifa_por_kwh: number | null;
+  potencia_kw: number;
   operador_id: string;
-  operador_nombre?: string; // solo en GET /cargadores/:numero_serie
+  operador_nombre: string;
+  electrolinera: Pick<Electrolinera, 'id' | 'nombre' | 'direccion' | 'ciudad' | 'latitud' | 'longitud' | 'horario'> | null;
+}
+
+export type DatosCargador = {
+  numero_serie?: string;
+  modelo?: string;
+  operador_id?: string;
+  ubicacion?: string;
+  tarifa_por_kwh?: number | null;
+  electrolinera_id?: string | null;
+  version_ocpp?: VersionOcpp;
+  potencia_kw?: number;
+  estado?: EstadoCargador;
+};
+
+export type Disponibilidad = 'disponible' | 'ocupado' | 'fuera_de_servicio' | 'sin_conexion';
+
+export interface CargadorMonitor {
+  numero_serie: string;
+  modelo: string;
+  ubicacion: string | null;
+  potencia_kw: number;
+  tarifa_por_kwh: number | null;
+  estado_registro: EstadoCargador;
+  operador_id: string;
+  operador_nombre: string | null;
+  electrolinera: { id: string; nombre: string; ciudad: string | null } | null;
+  zona: string | null;
+  version_ocpp: VersionOcpp;
+  disponibilidad: Disponibilidad;
+  conexion: {
+    ip: string | null;
+    protocolo: string;
+    version: '1.6' | '2.0.1';
+    conectado_desde: string;
+    ultimo_mensaje: string;
+    ultimo_heartbeat: string | null;
+    firmware: string | null;
+    conector: { status: string; errorCode: string; fecha: string } | null;
+  } | null;
+  sesion: {
+    id: string;
+    estado: EstadoSesion;
+    origen: 'app' | 'rfid' | 'panel';
+    usuario_id: string;
+    inicio: string;
+    kwh_consumidos: number;
+    potencia_kw: number | null;
+    costo_estimado: number;
+  } | null;
+}
+
+export interface Tablero {
+  generado: string;
+  resumen: { total: number; disponibles: number; cargando: number; fuera_de_servicio: number; sin_conexion: number; potencia_kw: number };
+  cargadores: CargadorMonitor[];
+}
+
+export interface ElectrolineraMapa {
+  id: string;
+  nombre: string;
+  direccion: string | null;
+  ciudad: string | null;
+  horario: string | null;
+  latitud: number;
+  longitud: number;
+  empresa: string | null;
+  cargadores: {
+    numero_serie: string;
+    modelo: string;
+    potencia_kw: number;
+    tarifa_por_kwh: number | null;
+    ubicacion: string | null;
+    disponibilidad: Disponibilidad;
+  }[];
 }
 
 export interface PagoSesion {
@@ -122,8 +246,9 @@ export interface SesionCarga {
   origen: 'app' | 'rfid' | 'panel';
   medicion: 'ocpp' | 'simulada';
   estado: EstadoSesion;
-  transaction_id: number | null;
+  transaction_id: number | string | null; // 1.6: entero; 2.0.1: texto
   potencia_kw: number | null;
+  soc_pct?: number | null; // % de batería, si el cargador lo informa
   inicio: string;
   fin: string | null;
   kwh_consumidos: number;
@@ -265,6 +390,7 @@ export interface ConexionOcpp {
   numero_serie: string;
   ip: string | null;
   protocolo: string;
+  version: '1.6' | '2.0.1';
   conectado_desde: string;
   ultimo_mensaje: string;
   ultimo_heartbeat: string | null;
@@ -307,8 +433,10 @@ export const authApi = {
 
 export const usuariosApi = {
   listar: () => request<Usuario[]>('/usuarios'),
-  crear: (data: { email: string; nombre: string; password: string; rol: Rol; operador_id?: string }) =>
+  crear: (data: { email: string; nombre: string; password: string; rol: Rol; operador_id?: string; zona_id?: string | null }) =>
     request<Usuario>('/usuarios', enviar('POST', data)),
+  actualizar: (id: string, data: { nombre?: string; rol?: Rol; zona_id?: string | null }) =>
+    request<Usuario>(`/usuarios/${id}`, enviar('PATCH', data)),
   cambiarActivo: (id: string, activo: boolean) => request<Usuario>(`/usuarios/${id}/activo`, enviar('PATCH', { activo })),
   cambiarClave: (id: string, password: string) => request<Usuario>(`/usuarios/${id}/clave`, enviar('PATCH', { password })),
 };
@@ -346,12 +474,37 @@ export const urlVerificacionProforma = (base: string, codigo: string) => `${base
 export const operadoresApi = {
   listar: () => request<Operador[]>('/operadores'),
   obtener: (id: string) => request<Operador>(`/operadores/${id}`),
-  crear: (data: { nombre: string; email_contacto?: string; cuenta_beneficiario?: string; comision_pactada?: number | null }) =>
+  crear: (data: { nombre: string; nit?: string; email_contacto?: string; cuenta_beneficiario?: string; comision_pactada?: number | null }) =>
     request<Operador>('/operadores', enviar('POST', data)),
   actualizar: (
     id: string,
-    data: { nombre?: string; email_contacto?: string; cuenta_beneficiario?: string; comision_pactada?: number | null },
+    data: { nombre?: string; nit?: string; email_contacto?: string; cuenta_beneficiario?: string; comision_pactada?: number | null },
   ) => request<Operador>(`/operadores/${id}`, enviar('PATCH', data)),
+};
+
+// ---------- Zonas y electrolineras ----------
+// backend/src/modules/zonas, backend/src/modules/electrolineras
+
+export const zonasApi = {
+  listar: () => request<Zona[]>('/zonas'),
+  crear: (data: { nombre: string; descripcion?: string }) => request<Zona>('/zonas', enviar('POST', data)),
+  actualizar: (id: string, data: { nombre?: string; descripcion?: string }) => request<Zona>(`/zonas/${id}`, enviar('PATCH', data)),
+  eliminar: (id: string) => request<void>(`/zonas/${id}`, enviar('DELETE')),
+};
+
+export const electrolineasApi = {
+  listar: () => request<Electrolinera[]>('/electrolineras'),
+  crear: (data: DatosElectrolinera) => request<Electrolinera>('/electrolineras', enviar('POST', data)),
+  actualizar: (id: string, data: DatosElectrolinera) => request<Electrolinera>(`/electrolineras/${id}`, enviar('PATCH', data)),
+  eliminar: (id: string) => request<void>(`/electrolineras/${id}`, enviar('DELETE')),
+};
+
+// ---------- Monitor y mapa ----------
+// backend/src/modules/monitor
+
+export const monitorApi = {
+  tablero: () => request<Tablero>('/monitor'),
+  mapa: () => request<ElectrolineraMapa[]>('/mapa'),
 };
 
 // ---------- Cargadores ----------
@@ -359,10 +512,9 @@ export const operadoresApi = {
 
 export const cargadoresApi = {
   listar: () => request<Cargador[]>('/cargadores'),
-  obtenerPorSerie: (numero_serie: string) => request<Cargador>(`/cargadores/${encodeURIComponent(numero_serie)}`),
-  registrar: (data: { numero_serie: string; modelo: string; operador_id: string; ubicacion?: string; tarifa_por_kwh?: number | null }) =>
-    request<Cargador>('/cargadores', enviar('POST', data)),
-  actualizar: (numero_serie: string, data: { ubicacion?: string; tarifa_por_kwh?: number | null; estado?: EstadoCargador }) =>
+  obtenerPorSerie: (numero_serie: string) => request<CargadorPublico>(`/cargadores/${encodeURIComponent(numero_serie)}`),
+  registrar: (data: DatosCargador) => request<Cargador>('/cargadores', enviar('POST', data)),
+  actualizar: (numero_serie: string, data: DatosCargador) =>
     request<Cargador>(`/cargadores/${encodeURIComponent(numero_serie)}`, enviar('PATCH', data)),
   eliminar: (numero_serie: string) => request<void>(`/cargadores/${encodeURIComponent(numero_serie)}`, enviar('DELETE')),
 };
@@ -398,7 +550,7 @@ export const facturacionApi = {
 
 export const ocppApi = {
   conexiones: () => request<ConexionOcpp[]>('/ocpp/conexiones'),
-  catalogo: () => request<ComandoOcpp[]>('/ocpp/catalogo'),
+  catalogo: (version: '1.6' | '2.0.1' = '1.6') => request<ComandoOcpp[]>(`/ocpp/catalogo?version=${version}`),
   mensajes: (filtro: { numero_serie?: string; despues_de?: number; limite?: number } = {}) => {
     const q = new URLSearchParams();
     if (filtro.numero_serie) q.set('numero_serie', filtro.numero_serie);

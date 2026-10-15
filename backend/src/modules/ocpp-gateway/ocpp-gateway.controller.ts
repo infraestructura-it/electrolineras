@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { alcanceOperador, Roles, Usuario, UsuarioActual } from '../../comun/decoradores';
+import { alcanceOperador, alcanceZona, Roles, Usuario, UsuarioActual } from '../../comun/decoradores';
 import { CargadoresService } from '../cargadores/cargadores.service';
 import { OcppGatewayService } from './ocpp-gateway.service';
 
@@ -13,15 +13,14 @@ export class OcppGatewayController {
   // Admin ve todas las conexiones; un operador solo las de sus cargadores.
   @Get('conexiones')
   conexiones(@Usuario() usuario: UsuarioActual) {
-    const alcance = alcanceOperador(usuario);
-    const series = alcance ? this.cargadores.findAll(alcance).map((c) => c.numero_serie) : null;
-    return this.gateway.listarConexiones(series);
+    const series = this.cargadores.seriesVisibles(alcanceOperador(usuario), alcanceZona(usuario));
+    return this.gateway.listarConexiones(series ? [...series] : null);
   }
 
   @Roles('admin')
   @Get('catalogo')
-  catalogo() {
-    return this.gateway.catalogo();
+  catalogo(@Query('version') version?: string) {
+    return this.gateway.catalogo(version === '2.0.1' ? '2.0.1' : '1.6');
   }
 
   @Roles('admin')

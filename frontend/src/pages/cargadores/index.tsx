@@ -7,7 +7,10 @@ import {
   cargadoresApi,
   configuracionApi,
   ConexionOcpp,
+  Electrolinera,
+  electrolineasApi,
   EstadoCargador,
+  VersionOcpp,
   formatoCOP,
   formatoKwh,
   haceCuanto,
@@ -26,8 +29,9 @@ type Dialogo =
   | null;
 
 export default function CargadoresPage() {
-  const { esAdmin } = useAuth();
+  const { esAdmin, puedeGestionar } = useAuth();
   const cargadores = useDatos(() => cargadoresApi.listar(), 15000);
+  const electrolineras = useDatos(() => electrolineasApi.listar());
   const conexiones = useDatos(() => ocppApi.conexiones(), 5000);
   const sesiones = useDatos(() => sesionesApi.listar(), 5000);
   const operadores = useDatos(() => operadoresApi.listar());
@@ -47,6 +51,7 @@ export default function CargadoresPage() {
     sesiones.datos?.find((s) => s.numero_serie === serie && ['iniciando', 'en_curso', 'deteniendo'].includes(s.estado));
   const urlQr = (c: Cargador) => `${baseQr}/c/${encodeURIComponent(c.numero_serie)}`;
   const nombreOperador = (id: string) => operadores.datos?.find((o) => o.id === id)?.nombre ?? '';
+  const nombreSitio = (id: string | null) => electrolineras.datos?.find((e) => e.id === id)?.nombre ?? null;
 
   async function eliminar(c: Cargador) {
     if (!window.confirm(`¿Eliminar el cargador ${c.numero_serie}? Su QR dejará de funcionar.`)) return;
@@ -66,9 +71,11 @@ export default function CargadoresPage() {
         titulo="Cargadores"
         descripcion="Cada cargador tiene su código QR para los usuarios y una dirección OCPP para conectarlo a la plataforma."
       >
-        <button className="btn" onClick={() => setDialogo({ tipo: 'nuevo' })}>
-          <Plus size={18} /> Registrar cargador
-        </button>
+        {puedeGestionar && (
+          <button className="btn" onClick={() => setDialogo({ tipo: 'nuevo' })}>
+            <Plus size={18} /> Registrar cargador
+          </button>
+        )}
       </Encabezado>
 
       <MensajeError>{error ?? cargadores.error}</MensajeError>
@@ -77,9 +84,11 @@ export default function CargadoresPage() {
         <div className="superficie vacio">
           <h2>Aún no hay cargadores</h2>
           <p>Registra el número de serie que configuraste en el equipo como pile_number_master.</p>
-          <button className="btn" onClick={() => setDialogo({ tipo: 'nuevo' })}>
-            <Plus size={18} /> Registrar cargador
-          </button>
+          {puedeGestionar && (
+            <button className="btn" onClick={() => setDialogo({ tipo: 'nuevo' })}>
+              <Plus size={18} /> Registrar cargador
+            </button>
+          )}
         </div>
       )}
 
@@ -93,7 +102,9 @@ export default function CargadoresPage() {
               <div className="cargador-cabeza">
                 <div style={{ minWidth: 0 }}>
                   <div className="cargador-serie">{c.numero_serie}</div>
-                  <div className="cargador-lugar">{c.ubicacion || 'Sin ubicación'}</div>
+                  <div className="cargador-lugar">
+                    {[nombreSitio(c.electrolinera_id) ?? 'Sin electrolinera', c.ubicacion].filter(Boolean).join(' · ')}
+                  </div>
                   {esAdmin && <div className="cargador-lugar">{nombreOperador(c.operador_id)}</div>}
                 </div>
                 <EstadoCargadorBadge estado={c.estado} cargando={Boolean(activa)} />
@@ -106,13 +117,13 @@ export default function CargadoresPage() {
                 </div>
                 <div>
                   <div className="dato-etiqueta">{activa ? 'Carga actual' : 'Modelo'}</div>
-                  <div className="dato-valor">{activa ? formatoKwh(activa.kwh_consumidos) : c.modelo}</div>
+                  <div className="dato-valor">{activa ? formatoKwh(activa.kwh_consumidos) : `${c.modelo} · ${c.potencia_kw} kW`}</div>
                 </div>
               </div>
 
               <div className="conexion">
                 <span className={`led ${conexion ? 'encendido' : ''}`} aria-hidden="true" />
-                {conexion ? 'En línea por OCPP' : 'Sin conexión OCPP'}
+                {conexion ? `En línea por OCPP ${conexion.version}` : `Sin conexión OCPP${c.version_ocpp !== 'auto' ? ` (${c.version_ocpp})` : ''}`}
                 {conexion && <span className="secundario">{haceCuanto(conexion.ultimo_mensaje)}</span>}
               </div>
 
@@ -120,15 +131,19 @@ export default function CargadoresPage() {
                 <button className="btn chico" onClick={() => setDialogo({ tipo: 'qr', cargador: c })}>
                   <QrCode size={16} /> Código QR
                 </button>
-                <button className="btn chico sec" onClick={() => setDialogo({ tipo: 'editar', cargador: c })}>
-                  <Pencil size={15} /> Editar
-                </button>
+                {puedeGestionar && (
+                  <button className="btn chico sec" onClick={() => setDialogo({ tipo: 'editar', cargador: c })}>
+                    <Pencil size={15} /> Editar
+                  </button>
+                )}
                 <button className="btn chico sec" onClick={() => setDialogo({ tipo: 'ocpp', cargador: c })}>
                   <Cable size={15} /> Conexión
                 </button>
-                <button className="btn-icono" onClick={() => eliminar(c)} aria-label={`Eliminar ${c.numero_serie}`} title="Eliminar">
-                  <Trash2 size={17} />
-                </button>
+                {puedeGestionar && (
+                  <button className="btn-icono" onClick={() => eliminar(c)} aria-label={`Eliminar ${c.numero_serie}`} title="Eliminar">
+                    <Trash2 size={17} />
+                  </button>
+                )}
               </div>
             </article>
           );
@@ -163,6 +178,7 @@ export default function CargadoresPage() {
           <FormularioCargador
             cargador={dialogo.tipo === 'editar' ? dialogo.cargador : null}
             operadores={esAdmin ? operadores.datos ?? [] : null}
+            electrolineras={electrolineras.datos ?? []}
             alGuardar={() => {
               setDialogo(null);
               cargadores.recargar();
@@ -204,6 +220,7 @@ function DatosOcpp({ cargador, conexion, urlQr }: { cargador: Cargador; conexion
           {conexion ? (
             <span>
               Conectado desde {new Date(conexion.conectado_desde).toLocaleString('es-CO')}
+              {' · '}OCPP {conexion.version}
               {conexion.boot?.firmwareVersion && <> · firmware {conexion.boot.firmwareVersion}</>}
             </span>
           ) : (
@@ -218,12 +235,17 @@ function DatosOcpp({ cargador, conexion, urlQr }: { cargador: Cargador; conexion
 function FormularioCargador({
   cargador,
   operadores,
+  electrolineras,
   alGuardar,
 }: {
   cargador: Cargador | null;
-  operadores: { id: string; nombre: string }[] | null; // null: el usuario es operador
+  operadores: { id: string; nombre: string }[] | null; // null: el usuario es de una empresa
+  electrolineras: Electrolinera[];
   alGuardar: () => void;
 }) {
+  const [electrolineraId, setElectrolineraId] = useState(cargador?.electrolinera_id ?? '');
+  const [version, setVersion] = useState<VersionOcpp>(cargador?.version_ocpp ?? 'auto');
+  const [potencia, setPotencia] = useState(String(cargador?.potencia_kw ?? 30));
   const [numeroSerie, setNumeroSerie] = useState(cargador?.numero_serie ?? '');
   const [modelo, setModelo] = useState(cargador?.modelo ?? 'MDXDC3001');
   const [operadorId, setOperadorId] = useState(cargador?.operador_id ?? '');
@@ -239,10 +261,17 @@ function FormularioCargador({
     setError(null);
     try {
       const tarifa_por_kwh = tarifa ? Number(tarifa) : null;
+      const comunes = {
+        ubicacion,
+        tarifa_por_kwh,
+        electrolinera_id: electrolineraId || null,
+        version_ocpp: version,
+        potencia_kw: Number(potencia),
+      };
       if (cargador) {
-        await cargadoresApi.actualizar(cargador.numero_serie, { ubicacion, tarifa_por_kwh, estado });
+        await cargadoresApi.actualizar(cargador.numero_serie, { ...comunes, estado });
       } else {
-        await cargadoresApi.registrar({ numero_serie: numeroSerie, modelo, operador_id: operadorId, ubicacion, tarifa_por_kwh });
+        await cargadoresApi.registrar({ ...comunes, numero_serie: numeroSerie, modelo, operador_id: operadorId || undefined });
       }
       alGuardar();
     } catch (e) {
@@ -264,11 +293,11 @@ function FormularioCargador({
             <label htmlFor="modelo">Modelo</label>
             <input id="modelo" value={modelo} onChange={(e) => setModelo(e.target.value)} required />
           </div>
-          {operadores && (
+          {operadores && !electrolineraId && (
             <div className="campo ancho-completo">
-              <label htmlFor="operador">Operador dueño</label>
+              <label htmlFor="operador">Empresa dueña</label>
               <select id="operador" value={operadorId} onChange={(e) => setOperadorId(e.target.value)} required>
-                <option value="">Selecciona un operador</option>
+                <option value="">Selecciona la empresa (o elige una electrolinera)</option>
                 {operadores.map((op) => (
                   <option key={op.id} value={op.id}>
                     {op.nombre}
@@ -279,10 +308,37 @@ function FormularioCargador({
           )}
         </>
       )}
-      <div className="campo ancho-completo">
-        <label htmlFor="ubicacion">Ubicación</label>
-        <input id="ubicacion" placeholder="Conjunto Los Pinos, sótano 1" value={ubicacion} onChange={(e) => setUbicacion(e.target.value)} />
+      <div className="campo">
+        <label htmlFor="electrolinera">Electrolinera</label>
+        <select id="electrolinera" value={electrolineraId} onChange={(e) => setElectrolineraId(e.target.value)}>
+          <option value="">Sin electrolinera</option>
+          {electrolineras
+            .filter((e) => !cargador || e.operador_id === cargador.operador_id)
+            .map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.nombre}
+              </option>
+            ))}
+        </select>
+        <span className="ayuda">Define su ubicación en el mapa de los conductores.</span>
+      </div>
+      <div className="campo">
+        <label htmlFor="ubicacion">Punto dentro del sitio</label>
+        <input id="ubicacion" placeholder="Bahía 2, sótano 1" value={ubicacion} onChange={(e) => setUbicacion(e.target.value)} />
         <span className="ayuda">La ve el usuario al escanear el QR.</span>
+      </div>
+      <div className="campo">
+        <label htmlFor="version">Versión OCPP</label>
+        <select id="version" value={version} onChange={(e) => setVersion(e.target.value as VersionOcpp)}>
+          <option value="auto">Automática (la que ofrezca el equipo)</option>
+          <option value="1.6">Solo OCPP 1.6J</option>
+          <option value="2.0.1">Solo OCPP 2.0.1</option>
+        </select>
+        <span className="ayuda">El MDXDC3001 usa 1.6J.</span>
+      </div>
+      <div className="campo">
+        <label htmlFor="potencia">Potencia nominal (kW)</label>
+        <input id="potencia" type="number" min="1" max="1000" step="0.1" value={potencia} onChange={(e) => setPotencia(e.target.value)} required />
       </div>
       <div className="campo">
         <label htmlFor="tarifa">Tarifa por kWh (COP)</label>

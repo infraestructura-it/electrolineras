@@ -1,11 +1,13 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { authApi, guardarToken, leerToken, Usuario } from './api';
+import { authApi, guardarToken, leerToken, Rol, Usuario } from './api';
 
 interface ContextoAuth {
   usuario: Usuario | null;
   cargando: boolean;
-  esAdmin: boolean;
+  esAdmin: boolean; // administrador de la plataforma
+  puedeGestionar: boolean; // admin de plataforma o administrador de empresa (crear y editar)
+  tieneRol: (...roles: Rol[]) => boolean;
   entrar: (email: string, password: string) => Promise<void>;
   registrarse: (data: { empresa: string; nombre: string; email: string; password: string }) => Promise<void>;
   salir: () => void;
@@ -62,7 +64,18 @@ export function ProveedorAuth({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <Contexto.Provider value={{ usuario, cargando, esAdmin: usuario?.rol === 'admin', entrar, registrarse, salir }}>
+    <Contexto.Provider
+      value={{
+        usuario,
+        cargando,
+        esAdmin: usuario?.rol === 'admin',
+        puedeGestionar: usuario?.rol === 'admin' || usuario?.rol === 'administrador',
+        tieneRol: (...roles: Rol[]) => Boolean(usuario && roles.includes(usuario.rol)),
+        entrar,
+        registrarse,
+        salir,
+      }}
+    >
       {children}
     </Contexto.Provider>
   );

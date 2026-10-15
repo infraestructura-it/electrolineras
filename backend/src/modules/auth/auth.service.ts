@@ -43,7 +43,7 @@ export class AuthService {
     if (!data.empresa?.trim()) throw new BadRequestException('Escribe el nombre de la empresa o conjunto');
     const operador = this.operadores.create({ nombre: data.empresa.trim(), email_contacto: data.email });
     try {
-      const usuario = this.usuarios.crear({ ...data, rol: 'operador', operador_id: operador.id });
+      const usuario = this.usuarios.crear({ ...data, rol: 'administrador', operador_id: operador.id });
       return { token: this.firmar(usuario), usuario };
     } catch (e) {
       this.operadores.eliminar(operador.id); // no dejar un operador huérfano si falla el usuario

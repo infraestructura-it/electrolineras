@@ -13,9 +13,11 @@ import { WebSocket, WebSocketServer, RawData } from 'ws';
 import { AlmacenService } from '../../comun/almacen.service';
 import { CargadoresService, EstadoCargador } from '../cargadores/cargadores.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
-import { CATALOGO_COMANDOS, validarComando } from './ocpp-comandos';
+import { CATALOGOS, validarComando, VersionProtocolo } from './ocpp-comandos';
 
-// Gateway OCPP 1.6J (sistema central / CSMS) para cargadores como el MDXDC3001.
+// Gateway OCPP (sistema central / CSMS) para cargadores como el MDXDC3001. Habla OCPP 1.6J y 2.0.1:
+// la versión se negocia con el subprotocolo del WebSocket ("ocpp1.6" / "ocpp2.0.1") según lo que
+// permita el cargador en la plataforma (version_ocpp: auto, 1.6 o 2.0.1).
 // El cargador se conecta por WebSocket a  ws(s)://<servidor>:<puerto>/ocpp/<pile_number>
 // (en el equipo: domain_master = ws://<servidor>:3000/ocpp y pile_number_master = numero_serie).
 //
@@ -25,6 +27,7 @@ const RUTA_OCPP = '/ocpp';
 const TIEMPO_ESPERA_RESPUESTA_MS = 30_000;
 const VIGENCIA_IDTAG_REMOTO_MS = 5 * 60_000;
 const MAX_MENSAJES_REGISTRO = 1000;
+const SUBPROTOCOLO: Record<VersionProtocolo, string> = { '1.6': 'ocpp1.6', '2.0.1': 'ocpp2.0.1' };
 
 type Direccion = 'entrada' | 'salida' | 'sistema';
 
@@ -51,6 +54,7 @@ interface Conexion {
   ws: WebSocket;
   ip: string | null;
   protocolo: string;
+  version: VersionProtocolo;
   conectado_desde: string;
   ultimo_mensaje: string;
   ultimo_heartbeat: string | null;
@@ -85,17 +89,44 @@ export interface ManejadorTransacciones {
   autorizarIdTag(numero_serie: string, idTag: string): boolean;
   alIniciarTransaccion(d: {
     numero_serie: string;
-    transactionId: number;
+    transactionId: number | string; // 1.6: entero que asigna el servidor; 2.0.1: texto que asigna el cargador
     connectorId: number;
     idTag: string;
-    meterStartWh: number;
+    meterStartWh: number | null; // null: se toma de la primera medición
     fecha: string;
     // 'panel' si la carga la ordenó un admin con RemoteStartTransaction desde la consola OCPP.
     origen: 'rfid' | 'panel';
   }): void;
-  alMedir(d: { numero_serie: string; transactionId: number | null; energiaWh: number | null; potenciaKw: number | null }): void;
-  alDetenerTransaccion(d: { numero_serie: string; transactionId: number; meterStopWh: number; fecha: string; motivo: string | null }): void;
+  alMedir(d: {
+    numero_serie: string;
+    transactionId: number | string | null;
+    energiaWh: number | null;
+    potenciaKw: number | null;
+    socPct: number | null;
+  }): void;
+  alDetenerTransaccion(d: {
+    numero_serie: string;
+    transactionId: number | string;
+    meterStopWh: number | null; // null: se conserva la última medición
+    fecha: string;
+    motivo: string | null;
+  }): void;
 }
+
+// Estados de conector de 2.0.1 (connectorStatus / chargingState) traducidos al vocabulario de 1.6
+// para que el resto de la plataforma use una sola lista.
+const STATUS_201: Record<string, string> = {
+  Available: 'Available',
+  Occupied: 'Preparing',
+  Reserved: 'Reserved',
+  Unavailable: 'Unavailable',
+  Faulted: 'Faulted',
+  Charging: 'Charging',
+  EVConnected: 'Preparing',
+  SuspendedEV: 'SuspendedEV',
+  SuspendedEVSE: 'SuspendedEVSE',
+  Idle: 'Preparing',
+};
 
 const ESTADO_POR_STATUS: Record<string, EstadoCargador> = {
   Faulted: 'en_falla',
@@ -113,6 +144,7 @@ export class OcppGatewayService implements OnModuleDestroy {
   private readonly registro: MensajeOcpp[] = [];
   private secuenciaRegistro = 0;
   private ultimoTransactionId: number;
+  private remoteStartId = Math.floor(Date.now() / 1000) % 1_000_000;
   private manejador: ManejadorTransacciones | null = null;
   private wss: WebSocketServer | null = null;
 
@@ -132,7 +164,10 @@ export class OcppGatewayService implements OnModuleDestroy {
   adjuntar(servidor: Server) {
     this.wss = new WebSocketServer({
       noServer: true,
-      handleProtocols: (protocolos) => (protocolos.has('ocpp1.6') ? 'ocpp1.6' : false),
+      handleProtocols: (protocolos, req) => {
+        const v = this.elegirVersion(protocolos, this.serieDeRuta(req.url));
+        return v ? SUBPROTOCOLO[v] : false;
+      },
     });
 
     servidor.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
@@ -141,7 +176,7 @@ export class OcppGatewayService implements OnModuleDestroy {
         socket.destroy();
         return;
       }
-      const numero_serie = decodeURIComponent(ruta.slice(RUTA_OCPP.length + 1).split('/').pop() ?? '');
+      const numero_serie = this.serieDeRuta(req.url);
       if (!numero_serie) {
         socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
         socket.destroy();
@@ -156,10 +191,38 @@ export class OcppGatewayService implements OnModuleDestroy {
         socket.destroy();
         return;
       }
+      const ofrecidos = String(req.headers['sec-websocket-protocol'] ?? '')
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean);
+      if (!this.elegirVersion(new Set(ofrecidos), numero_serie)) {
+        this.anotar(numero_serie, 'sistema', 'EVENTO', 'ConexionRechazada', null, {
+          motivo: `Versión OCPP no permitida para este cargador (ofrece: ${ofrecidos.join(', ') || 'ninguna'})`,
+          ip: req.socket.remoteAddress,
+        });
+        socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+        socket.destroy();
+        return;
+      }
       this.wss!.handleUpgrade(req, socket, head, (ws) => this.alConectar(ws, req, numero_serie));
     });
 
-    this.logger.log(`Gateway OCPP 1.6J escuchando en ${RUTA_OCPP}/<numero_serie>`);
+    this.logger.log(`Gateway OCPP 1.6J / 2.0.1 escuchando en ${RUTA_OCPP}/<numero_serie>`);
+  }
+
+  private serieDeRuta(url: string | undefined) {
+    const ruta = new URL(url ?? '/', 'http://localhost').pathname.replace(/\/+$/, '');
+    return decodeURIComponent(ruta.slice(RUTA_OCPP.length + 1).split('/').pop() ?? '');
+  }
+
+  // Versión a usar según lo que ofrece el cargador y lo que permite su registro.
+  // 'auto' prefiere 2.0.1 si el equipo la ofrece. Un cargador que no anuncia subprotocolo se
+  // trata como 1.6 (algunos equipos 1.6J no lo envían), salvo que esté fijado en 2.0.1.
+  private elegirVersion(ofrecidos: Set<string>, numero_serie: string): VersionProtocolo | null {
+    const permitida = this.cargadores.existe(numero_serie) ? this.cargadores.findByNumeroSerie(numero_serie).version_ocpp : 'auto';
+    const candidatos: VersionProtocolo[] = permitida === 'auto' ? ['2.0.1', '1.6'] : [permitida];
+    if (ofrecidos.size === 0) return candidatos.includes('1.6') ? '1.6' : null;
+    return candidatos.find((v) => ofrecidos.has(SUBPROTOCOLO[v])) ?? null;
   }
 
   onModuleDestroy() {
@@ -180,6 +243,23 @@ export class OcppGatewayService implements OnModuleDestroy {
     return e ? { status: e.status, fecha: e.fecha } : null;
   }
 
+  // Resumen de la conexión de un cargador para el monitor (null = no conectado).
+  infoConexion(numero_serie: string) {
+    const c = this.conexiones.get(numero_serie);
+    if (!c || c.ws.readyState !== WebSocket.OPEN) return null;
+    const conector = c.conectores.get(1) ?? c.conectores.get(0) ?? null;
+    return {
+      ip: c.ip,
+      protocolo: c.protocolo,
+      version: c.version,
+      conectado_desde: c.conectado_desde,
+      ultimo_mensaje: c.ultimo_mensaje,
+      ultimo_heartbeat: c.ultimo_heartbeat,
+      firmware: ((c.boot?.firmwareVersion ?? (c.boot?.chargingStation as Record<string, unknown> | undefined)?.firmwareVersion) as string) ?? null,
+      conector: conector ? { status: conector.status, errorCode: conector.errorCode, fecha: conector.fecha } : null,
+    };
+  }
+
   listarConexiones(series: string[] | null) {
     return [...this.conexiones.values()]
       .filter((c) => !series || series.includes(c.numero_serie))
@@ -187,6 +267,7 @@ export class OcppGatewayService implements OnModuleDestroy {
         numero_serie: c.numero_serie,
         ip: c.ip,
         protocolo: c.protocolo,
+        version: c.version,
         conectado_desde: c.conectado_desde,
         ultimo_mensaje: c.ultimo_mensaje,
         ultimo_heartbeat: c.ultimo_heartbeat,
@@ -204,23 +285,46 @@ export class OcppGatewayService implements OnModuleDestroy {
       .slice(-limite);
   }
 
-  catalogo() {
-    return CATALOGO_COMANDOS.map(({ accion, descripcion, plantilla }) => ({ accion, descripcion, plantilla }));
+  catalogo(version: VersionProtocolo = '1.6') {
+    return (CATALOGOS[version] ?? CATALOGOS['1.6']).map(({ accion, descripcion, plantilla }) => ({ accion, descripcion, plantilla }));
+  }
+
+  versionDe(numero_serie: string): VersionProtocolo | null {
+    return this.conexiones.get(numero_serie)?.version ?? null;
+  }
+
+  // Inicio y parada remotos con el comando que corresponde a la versión del cargador.
+  iniciarRemoto(numero_serie: string, idTag: string) {
+    if (this.versionDe(numero_serie) === '2.0.1') {
+      return this.enviarComando(numero_serie, 'RequestStartTransaction', {
+        idToken: { idToken: idTag, type: 'Central' },
+        remoteStartId: ++this.remoteStartId,
+        evseId: 1,
+      });
+    }
+    return this.enviarComando(numero_serie, 'RemoteStartTransaction', { connectorId: 1, idTag });
+  }
+
+  detenerRemoto(numero_serie: string, transactionId: number | string) {
+    if (this.versionDe(numero_serie) === '2.0.1') {
+      return this.enviarComando(numero_serie, 'RequestStopTransaction', { transactionId: String(transactionId) });
+    }
+    return this.enviarComando(numero_serie, 'RemoteStopTransaction', { transactionId: Number(transactionId) });
   }
 
   // ---------- Comandos del sistema central hacia el cargador ----------
 
   async enviarComando(numero_serie: string, accion: string, payload: unknown): Promise<RespuestaComando> {
-    const errores = validarComando(accion, payload ?? {});
-    if (errores.length) throw new BadRequestException(`Payload inválido para ${accion}: ${errores.join('; ')}`);
-
     const conexion = this.conexiones.get(numero_serie);
     if (!conexion || conexion.ws.readyState !== WebSocket.OPEN) {
       throw new ConflictException(`El cargador ${numero_serie} no está conectado por OCPP`);
     }
+    const errores = validarComando(accion, payload ?? {}, conexion.version);
+    if (errores.length) throw new BadRequestException(`Payload inválido para ${accion}: ${errores.join('; ')}`);
 
-    if (accion === 'RemoteStartTransaction') {
-      const idTag = String((payload as { idTag: string }).idTag);
+    if (accion === 'RemoteStartTransaction' || accion === 'RequestStartTransaction') {
+      const p = payload as { idTag?: string; idToken?: { idToken: string } };
+      const idTag = String(p.idTag ?? p.idToken?.idToken);
       this.idTagsRemotos.set(numero_serie, { idTag, vence: Date.now() + VIGENCIA_IDTAG_REMOTO_MS });
     }
 
@@ -250,6 +354,7 @@ export class OcppGatewayService implements OnModuleDestroy {
       ws,
       ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || null,
       protocolo: ws.protocol || '(sin subprotocolo)',
+      version: ws.protocol === SUBPROTOCOLO['2.0.1'] ? '2.0.1' : '1.6',
       conectado_desde: ahora,
       ultimo_mensaje: ahora,
       ultimo_heartbeat: null,
@@ -258,7 +363,11 @@ export class OcppGatewayService implements OnModuleDestroy {
       conectores: new Map(),
     };
     this.conexiones.set(numero_serie, conexion);
-    this.anotar(numero_serie, 'sistema', 'EVENTO', 'Conectado', null, { ip: conexion.ip, protocolo: conexion.protocolo });
+    this.anotar(numero_serie, 'sistema', 'EVENTO', 'Conectado', null, {
+      ip: conexion.ip,
+      protocolo: conexion.protocolo,
+      version: conexion.version,
+    });
 
     ws.on('message', (datos: RawData) => this.alRecibir(conexion, datos.toString()));
     ws.on('close', (codigo: number) => {
@@ -295,7 +404,7 @@ export class OcppGatewayService implements OnModuleDestroy {
       const payload = (mensaje[3] ?? {}) as Record<string, unknown>;
       this.anotar(conexion.numero_serie, 'entrada', 'CALL', accion, mensaje_id, payload);
       try {
-        const respuesta = this.atender(conexion, accion, payload);
+        const respuesta = conexion.version === '2.0.1' ? this.atender201(conexion, accion, payload) : this.atender(conexion, accion, payload);
         this.enviar(conexion, [3, mensaje_id, respuesta], accion);
       } catch (e) {
         const error = e instanceof ErrorOcpp ? e : new ErrorOcpp('InternalError', (e as Error).message);
@@ -403,12 +512,13 @@ export class OcppGatewayService implements OnModuleDestroy {
 
       case 'MeterValues': {
         exigirEntero('connectorId');
-        const { energiaWh, potenciaKw } = this.leerMedicion(p.meterValue);
+        const { energiaWh, potenciaKw, socPct } = this.leerMedicion(p.meterValue);
         this.manejador?.alMedir({
           numero_serie: serie,
           transactionId: Number.isInteger(p.transactionId) ? (p.transactionId as number) : null,
           energiaWh,
           potenciaKw,
+          socPct,
         });
         return {};
       }
@@ -438,6 +548,131 @@ export class OcppGatewayService implements OnModuleDestroy {
     }
   }
 
+  // ---------- OCPP 2.0.1: mensajes que inicia la estación ----------
+
+  private atender201(conexion: Conexion, accion: string, p: Record<string, unknown>): Record<string, unknown> {
+    const ahora = new Date().toISOString();
+    const serie = conexion.numero_serie;
+    const objeto = (campo: string) => {
+      const v = p[campo];
+      if (typeof v !== 'object' || v === null || Array.isArray(v)) {
+        throw new ErrorOcpp('FormatViolation', `Falta "${campo}" en ${accion}`);
+      }
+      return v as Record<string, unknown>;
+    };
+    const texto = (o: Record<string, unknown>, campo: string, donde: string) => {
+      if (typeof o[campo] !== 'string' || !(o[campo] as string).length) {
+        throw new ErrorOcpp('FormatViolation', `Falta "${donde}" en ${accion}`);
+      }
+      return o[campo] as string;
+    };
+
+    switch (accion) {
+      case 'BootNotification': {
+        const estacion = objeto('chargingStation');
+        texto(estacion, 'model', 'chargingStation.model');
+        texto(estacion, 'vendorName', 'chargingStation.vendorName');
+        conexion.boot = p;
+        const config = this.configuracion.obtener();
+        conexion.boot_aceptado = this.cargadores.existe(serie) || config.aceptar_cargadores_desconocidos;
+        return { currentTime: ahora, interval: config.intervalo_heartbeat_s, status: conexion.boot_aceptado ? 'Accepted' : 'Rejected' };
+      }
+
+      case 'Heartbeat':
+        conexion.ultimo_heartbeat = ahora;
+        return { currentTime: ahora };
+
+      case 'StatusNotification': {
+        const status = texto(p, 'connectorStatus', 'connectorStatus');
+        const evseId = Number.isInteger(p.evseId) ? (p.evseId as number) : 1;
+        this.fijarConector(conexion, evseId, STATUS_201[status] ?? status, 'NoError', null, ahora);
+        return {};
+      }
+
+      case 'Authorize': {
+        const idToken = texto(objeto('idToken'), 'idToken', 'idToken.idToken');
+        return { idTokenInfo: { status: this.autorizar(serie, idToken) ? 'Accepted' : 'Invalid' } };
+      }
+
+      case 'TransactionEvent': {
+        const evento = texto(p, 'eventType', 'eventType');
+        const info = objeto('transactionInfo');
+        const transactionId = texto(info, 'transactionId', 'transactionInfo.transactionId');
+        const idToken = (p.idToken as { idToken?: string } | undefined)?.idToken ?? null;
+        const evseId = Number((p.evse as { id?: number } | undefined)?.id ?? 1) || 1;
+        const fecha = typeof p.timestamp === 'string' ? (p.timestamp as string) : ahora;
+        const { energiaWh, potenciaKw, socPct } = this.leerMedicion(p.meterValue);
+        if (typeof info.chargingState === 'string') {
+          this.fijarConector(conexion, evseId, STATUS_201[info.chargingState] ?? info.chargingState, 'NoError', null, ahora);
+        }
+
+        let idTokenInfo: Record<string, unknown> | undefined;
+        if (idToken) {
+          const autorizado = this.autorizar(serie, idToken);
+          idTokenInfo = { status: autorizado ? 'Accepted' : 'Invalid' };
+          // La transacción se enlaza con una sesión cuando llega su idToken (en Started o después).
+          if (autorizado && evento !== 'Ended') {
+            const desdePanel = this.esIdTagRemoto(serie, idToken);
+            if (desdePanel) this.idTagsRemotos.delete(serie);
+            this.manejador?.alIniciarTransaccion({
+              origen: desdePanel ? 'panel' : 'rfid',
+              numero_serie: serie,
+              transactionId,
+              connectorId: evseId,
+              idTag: idToken,
+              meterStartWh: energiaWh,
+              fecha,
+            });
+          }
+        }
+
+        if (evento === 'Ended') {
+          this.fijarConector(conexion, evseId, 'Available', 'NoError', null, ahora);
+          this.manejador?.alDetenerTransaccion({
+            numero_serie: serie,
+            transactionId,
+            meterStopWh: energiaWh,
+            fecha,
+            motivo: typeof info.stoppedReason === 'string' ? (info.stoppedReason as string) : null,
+          });
+        } else if (energiaWh !== null || potenciaKw !== null || socPct !== null) {
+          this.manejador?.alMedir({ numero_serie: serie, transactionId, energiaWh, potenciaKw, socPct });
+        }
+        return idTokenInfo ? { idTokenInfo } : {};
+      }
+
+      case 'MeterValues': {
+        const { energiaWh, potenciaKw, socPct } = this.leerMedicion(p.meterValue);
+        this.manejador?.alMedir({ numero_serie: serie, transactionId: null, energiaWh, potenciaKw, socPct });
+        return {};
+      }
+
+      case 'DataTransfer':
+        return { status: 'Accepted' };
+
+      // Avisos que se registran en la consola sin más respuesta que la confirmación.
+      case 'NotifyEvent':
+      case 'NotifyReport':
+      case 'SecurityEventNotification':
+      case 'LogStatusNotification':
+      case 'FirmwareStatusNotification':
+      case 'NotifyChargingLimit':
+      case 'ClearedChargingLimit':
+      case 'ReportChargingProfiles':
+      case 'NotifyMonitoringReport':
+      case 'NotifyEVChargingNeeds':
+        return accion === 'NotifyEVChargingNeeds' ? { status: 'Accepted' } : {};
+
+      default:
+        throw new ErrorOcpp('NotImplemented', `La acción ${accion} no está implementada en el sistema central`);
+    }
+  }
+
+  private fijarConector(conexion: Conexion, id: number, status: string, errorCode: string, info: string | null, fecha: string) {
+    conexion.conectores.set(id, { status, errorCode, info, fecha });
+    if (id <= 1) this.cargadores.actualizarEstadoDesdeOcpp(conexion.numero_serie, ESTADO_POR_STATUS[status] ?? 'activo');
+  }
+
   // Tarjeta RFID autorizada en Configuración, idTag de una sesión iniciada desde la app, o idTag
   // que el propio servidor envió con RemoteStartTransaction desde la consola OCPP.
   private autorizar(serie: string, idTag: string) {
@@ -459,22 +694,27 @@ export class OcppGatewayService implements OnModuleDestroy {
     return remoto.idTag === idTag;
   }
 
-  // Energy.Active.Import.Register (Wh o kWh) y Power.Active.Import (W o kW) del último sampledValue.
+  // Energy.Active.Import.Register (Wh o kWh), Power.Active.Import (W o kW) y SoC (%) del último
+  // sampledValue. 1.6 manda la unidad en "unit" y el valor como texto; 2.0.1, en
+  // "unitOfMeasure": { unit, multiplier } y el valor como número.
   private leerMedicion(meterValue: unknown) {
     let energiaWh: number | null = null;
     let potenciaKw: number | null = null;
-    if (!Array.isArray(meterValue)) return { energiaWh, potenciaKw };
+    let socPct: number | null = null;
+    if (!Array.isArray(meterValue)) return { energiaWh, potenciaKw, socPct };
     for (const mv of meterValue) {
       for (const sv of (mv?.sampledValue ?? []) as Array<Record<string, unknown>>) {
-        const valor = Number(sv.value);
-        if (!Number.isFinite(valor)) continue;
         const medida = (sv.measurand as string) ?? 'Energy.Active.Import.Register';
-        const unidad = (sv.unit as string) ?? (medida.startsWith('Power') ? 'W' : 'Wh');
+        const uom = sv.unitOfMeasure as { unit?: string; multiplier?: number } | undefined;
+        const unidad = (sv.unit as string) ?? uom?.unit ?? (medida.startsWith('Power') ? 'W' : 'Wh');
+        const valor = Number(sv.value) * 10 ** (Number(uom?.multiplier) || 0);
+        if (!Number.isFinite(valor)) continue;
         if (medida === 'Energy.Active.Import.Register') energiaWh = unidad === 'kWh' ? valor * 1000 : valor;
         if (medida === 'Power.Active.Import') potenciaKw = unidad === 'kW' ? valor : valor / 1000;
+        if (medida === 'SoC') socPct = Math.min(Math.max(valor, 0), 100);
       }
     }
-    return { energiaWh, potenciaKw };
+    return { energiaWh, potenciaKw, socPct };
   }
 
   private siguienteTransactionId() {

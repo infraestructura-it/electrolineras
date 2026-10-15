@@ -3,9 +3,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { ReactNode, useEffect, useState } from 'react';
 import {
+  Activity,
   BatteryCharging,
   Building2,
+  ExternalLink,
   FileText,
+  KeyRound,
+  Map as IconoMapa,
+  MapPinned,
   LayoutDashboard,
   LogOut,
   LucideIcon,
@@ -18,22 +23,28 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import { NOMBRE_ROL, Rol } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
 interface Enlace {
   href: string;
   texto: string;
   icono: LucideIcon;
-  soloAdmin?: boolean;
-  textoOperador?: string;
+  roles?: Rol[]; // sin roles: todos los usuarios del panel
+  textoEmpresa?: string; // texto para usuarios de una empresa
+  nuevaPestana?: boolean;
 }
 
-// Grupos del menú lateral. Los de "Sistema" solo los ve el administrador.
+const GESTION: Rol[] = ['admin', 'administrador'];
+
+// Grupos del menú lateral, filtrados por el rol del usuario.
 const GRUPOS: { titulo: string; enlaces: Enlace[] }[] = [
   {
     titulo: 'Operación',
     enlaces: [
       { href: '/', texto: 'Inicio', icono: LayoutDashboard },
+      { href: '/monitor', texto: 'Monitor en vivo', icono: Activity, nuevaPestana: true },
+      { href: '/electrolineras', texto: 'Electrolineras', icono: MapPinned },
       { href: '/cargadores', texto: 'Cargadores', icono: PlugZap },
       { href: '/sesiones', texto: 'Sesiones de carga', icono: BatteryCharging },
     ],
@@ -41,22 +52,24 @@ const GRUPOS: { titulo: string; enlaces: Enlace[] }[] = [
   {
     titulo: 'Negocio',
     enlaces: [
-      { href: '/operadores', texto: 'Operadores', textoOperador: 'Mi empresa', icono: Building2 },
+      { href: '/operadores', texto: 'Empresas', textoEmpresa: 'Mi empresa', icono: Building2, roles: GESTION },
       { href: '/proformas', texto: 'Proformas', icono: FileText },
-      { href: '/facturacion', texto: 'Facturación', icono: Receipt },
+      { href: '/facturacion', texto: 'Facturación', icono: Receipt, roles: GESTION },
     ],
   },
   {
     titulo: 'Sistema',
     enlaces: [
-      { href: '/ocpp', texto: 'Consola OCPP', icono: RadioTower, soloAdmin: true },
-      { href: '/usuarios', texto: 'Usuarios', icono: Users, soloAdmin: true },
-      { href: '/configuracion', texto: 'Configuración', icono: SlidersHorizontal, soloAdmin: true },
+      { href: '/ocpp', texto: 'Consola OCPP', icono: RadioTower, roles: ['admin'] },
+      { href: '/usuarios', texto: 'Usuarios', icono: Users, roles: GESTION },
+      { href: '/zonas', texto: 'Zonas', icono: IconoMapa, roles: ['admin'] },
+      { href: '/licencias', texto: 'Licencias', icono: KeyRound, roles: GESTION },
+      { href: '/configuracion', texto: 'Configuración', icono: SlidersHorizontal, roles: ['admin'] },
     ],
   },
 ];
 
-const RUTAS_ADMIN = GRUPOS.flatMap((g) => g.enlaces.filter((e) => e.soloAdmin).map((e) => e.href));
+const RESTRINGIDAS = GRUPOS.flatMap((g) => g.enlaces.filter((e) => e.roles));
 
 const iniciales = (nombre: string) =>
   nombre
@@ -67,7 +80,7 @@ const iniciales = (nombre: string) =>
 
 export default function PanelLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const { usuario, cargando, esAdmin, salir } = useAuth();
+  const { usuario, cargando, esAdmin, tieneRol, salir } = useAuth();
   const [menuAbierto, setMenuAbierto] = useState(false);
 
   // Sin sesión: al login, recordando a dónde quería ir.
@@ -83,7 +96,8 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
   }
 
   const activo = (href: string) => (href === '/' ? router.pathname === '/' : router.pathname.startsWith(href));
-  const sinPermiso = !esAdmin && RUTAS_ADMIN.some((r) => router.pathname.startsWith(r));
+  const permitido = (e: Enlace) => !e.roles || tieneRol(...e.roles);
+  const sinPermiso = RESTRINGIDAS.some((e) => router.pathname.startsWith(e.href) && !permitido(e));
 
   return (
     <div className="panel-raiz">
@@ -113,17 +127,26 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
 
         <nav className="lateral-nav">
           {GRUPOS.map((grupo) => {
-            const enlaces = grupo.enlaces.filter((e) => esAdmin || !e.soloAdmin);
+            const enlaces = grupo.enlaces.filter(permitido);
             if (!enlaces.length) return null;
             return (
               <div className="nav-grupo" key={grupo.titulo}>
                 <div className="nav-grupo-titulo">{grupo.titulo}</div>
-                {enlaces.map(({ href, texto, textoOperador, icono: Icono }) => (
-                  <Link key={href} href={href} className={`nav-enlace ${activo(href) ? 'activo' : ''}`} aria-current={activo(href) ? 'page' : undefined}>
-                    <Icono size={19} strokeWidth={1.9} aria-hidden="true" />
-                    <span>{!esAdmin && textoOperador ? textoOperador : texto}</span>
-                  </Link>
-                ))}
+                {enlaces.map(({ href, texto, textoEmpresa, icono: Icono, nuevaPestana }) =>
+                  nuevaPestana ? (
+                    // Se abre en otra pestaña: pensado para dejarlo a la vista en una pantalla aparte.
+                    <a key={href} href={href} target="_blank" rel="noopener" className="nav-enlace">
+                      <Icono size={19} strokeWidth={1.9} aria-hidden="true" />
+                      <span>{texto}</span>
+                      <ExternalLink size={14} className="nav-externo" aria-label="(se abre en otra pestaña)" />
+                    </a>
+                  ) : (
+                    <Link key={href} href={href} className={`nav-enlace ${activo(href) ? 'activo' : ''}`} aria-current={activo(href) ? 'page' : undefined}>
+                      <Icono size={19} strokeWidth={1.9} aria-hidden="true" />
+                      <span>{!esAdmin && textoEmpresa ? textoEmpresa : texto}</span>
+                    </Link>
+                  ),
+                )}
               </div>
             );
           })}
@@ -133,7 +156,7 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
           <span className="avatar" aria-hidden="true">{iniciales(usuario.nombre)}</span>
           <div className="usuario-datos">
             <div className="usuario-nombre">{usuario.nombre}</div>
-            <div className="usuario-rol">{usuario.rol === 'admin' ? 'Administrador' : 'Operador'}</div>
+            <div className="usuario-rol">{NOMBRE_ROL[usuario.rol] ?? usuario.rol}</div>
           </div>
           <button className="btn-icono" onClick={salir} aria-label="Cerrar sesión" title="Cerrar sesión">
             <LogOut size={18} />
@@ -145,7 +168,7 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
         {sinPermiso ? (
           <div className="vacio">
             <h1>Sin acceso</h1>
-            <p>Esta sección es solo para administradores de la plataforma.</p>
+            <p>Tu rol ({NOMBRE_ROL[usuario.rol]}) no tiene acceso a esta sección.</p>
           </div>
         ) : (
           children

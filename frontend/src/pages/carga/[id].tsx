@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { sesionesApi, SesionCarga, formatoCOP, formatoKwh, formatoFecha } from '@/lib/api';
+import { cargadoresApi, sesionesApi, SesionCarga, formatoCOP, formatoKwh, formatoFecha } from '@/lib/api';
 
 const INTERVALO_MS = 3000;
-const POTENCIA_NOMINAL_KW = 30; // MDXDC3001
+const POTENCIA_NOMINAL_KW = 30; // MDXDC3001, si no se conoce la del cargador
 const RADIO = 92;
 const CIRCUNFERENCIA = 2 * Math.PI * RADIO;
 
@@ -17,9 +17,20 @@ function duracion(desde: string, hasta: number) {
   return h > 0 ? `${h}:${dos(m)}:${dos(s)}` : `${dos(m)}:${dos(s)}`;
 }
 
-// Anillo de potencia: qué tanto de los 30 kW nominales está entregando el cargador ahora.
-function AnilloPotencia({ potenciaKw, children }: { potenciaKw: number | null; children: React.ReactNode }) {
-  const fraccion = Math.min(Math.max((potenciaKw ?? 0) / POTENCIA_NOMINAL_KW, 0), 1);
+// Anillo: el % de batería del vehículo si el cargador lo informa (DC/CCS); si no, qué tanto de
+// su potencia nominal está entregando el cargador ahora.
+function AnilloPotencia({
+  potenciaKw,
+  nominalKw,
+  socPct,
+  children,
+}: {
+  potenciaKw: number | null;
+  nominalKw: number;
+  socPct: number | null;
+  children: React.ReactNode;
+}) {
+  const fraccion = Math.min(Math.max(socPct != null ? socPct / 100 : (potenciaKw ?? 0) / nominalKw, 0), 1);
   return (
     <div className="anillo">
       <svg viewBox="0 0 210 210" aria-hidden="true">
@@ -48,6 +59,16 @@ export default function CargaEnCurso() {
   const [ahora, setAhora] = useState(Date.now());
   const [error, setError] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  const [nominalKw, setNominalKw] = useState(POTENCIA_NOMINAL_KW);
+  const serieSesion = sesion?.numero_serie;
+
+  useEffect(() => {
+    if (!serieSesion) return;
+    cargadoresApi
+      .obtenerPorSerie(serieSesion)
+      .then((c) => setNominalKw(c.potencia_kw || POTENCIA_NOMINAL_KW))
+      .catch(() => undefined);
+  }, [serieSesion]);
 
   const refrescar = useCallback(async () => {
     if (!id) return;
@@ -145,12 +166,16 @@ export default function CargaEnCurso() {
             <span className="app-pulso" aria-hidden="true" /> {deteniendo ? 'Deteniendo' : 'Cargando'} en {sesion.numero_serie}
           </div>
 
-          <AnilloPotencia potenciaKw={deteniendo ? 0 : sesion.potencia_kw}>
+          <AnilloPotencia potenciaKw={deteniendo ? 0 : sesion.potencia_kw} nominalKw={nominalKw} socPct={sesion.soc_pct ?? null}>
             <div className="app-cifra" aria-live="polite">
               {sesion.kwh_consumidos.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
             <div className="anillo-unidad">kWh entregados</div>
-            <div className="app-texto">{sesion.potencia_kw != null && !deteniendo ? `${sesion.potencia_kw} kW` : 'Sin potencia'}</div>
+            <div className="app-texto">
+              {[sesion.soc_pct != null ? `Batería ${Math.round(sesion.soc_pct)} %` : null, sesion.potencia_kw != null && !deteniendo ? `${sesion.potencia_kw} kW` : null]
+                .filter(Boolean)
+                .join(' · ') || 'Sin potencia'}
+            </div>
           </AnilloPotencia>
 
           <dl className="app-datos">

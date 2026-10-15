@@ -40,9 +40,10 @@ export interface SesionRegistro {
   medicion: 'ocpp' | 'simulada';
   estado: EstadoSesion;
   id_tag: string | null;
-  transaction_id: number | null;
+  transaction_id: number | string | null; // 1.6: entero; 2.0.1: texto que asigna el cargador
   meter_start_wh: number | null;
   potencia_kw: number | null;
+  soc_pct?: number | null; // % de batería, si el cargador lo informa (DC/CCS)
   inicio: string;
   fin: string | null;
   kwh_consumidos: number;
@@ -125,11 +126,18 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
 
   // ---------- Consultas ----------
 
-  listar(alcance: string | null = null) {
+  // series: si viene, limita a esos cargadores (operario con zona).
+  listar(alcance: string | null = null, series: Set<string> | null = null) {
     return [...this.sesiones.values()]
-      .filter((s) => !alcance || s.operador_id === alcance)
+      .filter((s) => (!alcance || s.operador_id === alcance) && (!series || series.has(s.numero_serie)))
       .sort((a, b) => Date.parse(b.inicio) - Date.parse(a.inicio))
       .map((s) => this.vista(s));
+  }
+
+  // Sesión activa (iniciando, en curso o deteniendo) de un cargador, para el monitor y el mapa.
+  activaPorSerie(numero_serie: string) {
+    const s = [...this.sesiones.values()].find((x) => x.numero_serie === numero_serie && ACTIVAS.includes(x.estado));
+    return s ? this.vista(s) : null;
   }
 
   obtener(id: string) {
@@ -182,7 +190,7 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
 
     if (conectado) {
       const respuesta = await this.ocpp
-        .enviarComando(cargador.numero_serie, 'RemoteStartTransaction', { connectorId: 1, idTag: sesion.id_tag })
+        .iniciarRemoto(cargador.numero_serie, sesion.id_tag!)
         .catch((e: Error) => ({ tipo: 'CALLERROR' as const, codigo: 'Error', descripcion: e.message, detalles: null }));
       const aceptado = respuesta.tipo === 'CALLRESULT' && respuesta.payload.status === 'Accepted';
       if (!aceptado) {
@@ -210,7 +218,7 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
       sesion.estado = 'deteniendo';
       this.persistir();
       const respuesta = await this.ocpp
-        .enviarComando(sesion.numero_serie, 'RemoteStopTransaction', { transactionId: sesion.transaction_id })
+        .detenerRemoto(sesion.numero_serie, sesion.transaction_id)
         .catch((e: Error) => ({ tipo: 'CALLERROR' as const, codigo: 'Error', descripcion: e.message, detalles: null }));
       if (respuesta.tipo !== 'CALLRESULT' || respuesta.payload.status !== 'Accepted') {
         // Si el conector ya no está cargando, el cargador perdió la transacción (reinicio, corte):
@@ -277,13 +285,15 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
 
   alIniciarTransaccion(d: {
     numero_serie: string;
-    transactionId: number;
+    transactionId: number | string;
     connectorId: number;
     idTag: string;
-    meterStartWh: number;
+    meterStartWh: number | null;
     fecha: string;
     origen: 'rfid' | 'panel';
   }) {
+    // En 2.0.1 el idToken puede repetirse en varios TransactionEvent: solo la primera vez cuenta.
+    if ([...this.sesiones.values()].some((s) => s.numero_serie === d.numero_serie && s.transaction_id === d.transactionId)) return;
     const pendiente = [...this.sesiones.values()].find(
       (s) => s.numero_serie === d.numero_serie && s.id_tag === d.idTag && s.estado === 'iniciando',
     );
@@ -335,25 +345,41 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
     this.persistir();
   }
 
-  alMedir(d: { numero_serie: string; transactionId: number | null; energiaWh: number | null; potenciaKw: number | null }) {
+  alMedir(d: {
+    numero_serie: string;
+    transactionId: number | string | null;
+    energiaWh: number | null;
+    potenciaKw: number | null;
+    socPct?: number | null;
+  }) {
     const sesion = [...this.sesiones.values()].find(
       (s) =>
         s.numero_serie === d.numero_serie &&
         ACTIVAS.includes(s.estado) &&
         (d.transactionId == null || s.transaction_id === d.transactionId),
     );
-    if (!sesion || sesion.meter_start_wh == null) return;
+    if (!sesion) return;
+    if (d.socPct != null) sesion.soc_pct = Number(d.socPct.toFixed(1));
+    // Sin lectura inicial (2.0.1 sin meterValue en Started): la primera medición es el punto de partida.
+    if (sesion.meter_start_wh == null && d.energiaWh != null && sesion.estado !== 'iniciando') sesion.meter_start_wh = d.energiaWh;
+    if (sesion.meter_start_wh == null) return;
     if (d.energiaWh != null) sesion.kwh_consumidos = this.kwhDesde(sesion.meter_start_wh, d.energiaWh);
     if (d.potenciaKw != null) sesion.potencia_kw = Number(d.potenciaKw.toFixed(2));
     if (Date.now() - this.ultimaPersistencia > PERSISTIR_MEDICION_CADA_MS) this.persistir();
   }
 
-  alDetenerTransaccion(d: { numero_serie: string; transactionId: number; meterStopWh: number; fecha: string; motivo: string | null }) {
+  alDetenerTransaccion(d: {
+    numero_serie: string;
+    transactionId: number | string;
+    meterStopWh: number | null;
+    fecha: string;
+    motivo: string | null;
+  }) {
     const sesion = [...this.sesiones.values()].find(
       (s) => s.numero_serie === d.numero_serie && s.transaction_id === d.transactionId,
     );
     if (!sesion || !ACTIVAS.includes(sesion.estado)) return;
-    if (sesion.meter_start_wh != null) sesion.kwh_consumidos = this.kwhDesde(sesion.meter_start_wh, d.meterStopWh);
+    if (sesion.meter_start_wh != null && d.meterStopWh != null) sesion.kwh_consumidos = this.kwhDesde(sesion.meter_start_wh, d.meterStopWh);
     // Hora del cargador (sincronizada en el BootNotification): un cierre que llega tarde, tras un
     // corte de red, conserva la hora real en que terminó la carga.
     const fin = Number.isFinite(Date.parse(d.fecha)) && Date.parse(d.fecha) <= Date.now() + 60_000 ? new Date(d.fecha).toISOString() : new Date().toISOString();
@@ -362,10 +388,12 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
 
   // ---------- Estadísticas para el dashboard ----------
 
-  estadisticas(alcance: string | null, dias = 14) {
+  estadisticas(alcance: string | null, dias = 14, series: Set<string> | null = null) {
     const zona = 'America/Bogota';
     const diaLocal = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone: zona });
-    const lista = [...this.sesiones.values()].filter((s) => !alcance || s.operador_id === alcance);
+    const lista = [...this.sesiones.values()].filter(
+      (s) => (!alcance || s.operador_id === alcance) && (!series || series.has(s.numero_serie)),
+    );
     const finalizadas = lista.filter((s) => s.estado === 'finalizada');
 
     const hoy = Date.now();

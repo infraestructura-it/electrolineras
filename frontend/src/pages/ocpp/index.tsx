@@ -18,8 +18,10 @@ const hora = (iso: string) => new Date(iso).toLocaleTimeString('es-CO', { hour12
 
 export default function ConsolaOcpp() {
   const conexiones = useDatos(() => ocppApi.conexiones(), 4000);
-  const catalogo = useDatos(() => ocppApi.catalogo());
   const [seleccionado, setSeleccionado] = useState<string | null>(null);
+  // El catálogo de comandos depende de la versión OCPP con la que se conectó el cargador.
+  const version = conexiones.datos?.find((c) => c.numero_serie === seleccionado)?.version ?? '1.6';
+  const catalogo = useDatos(() => ocppApi.catalogo(version), undefined, version);
 
   const lista = conexiones.datos ?? [];
   const actual = lista.find((c) => c.numero_serie === seleccionado) ?? null;
@@ -62,7 +64,7 @@ export default function ConsolaOcpp() {
                       <span className="mono" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.numero_serie}</span>
                     </span>
                     <span className="secundario" style={{ color: 'var(--tenue)', fontSize: 12, whiteSpace: 'nowrap' }}>
-                      {estadoConector(c)}
+                      {estadoConector(c)} · {c.version}
                     </span>
                   </button>
                 ))}
@@ -82,10 +84,18 @@ export default function ConsolaOcpp() {
             <div className="superficie-titulo">
               <div>
                 <h2>Enviar comando</h2>
-                <p>{actual ? <>Destino: <code>{actual.numero_serie}</code></> : 'Selecciona un cargador conectado'}</p>
+                <p>
+                  {actual ? (
+                    <>
+                      Destino: <code>{actual.numero_serie}</code> · OCPP {actual.version}
+                    </>
+                  ) : (
+                    'Selecciona un cargador conectado'
+                  )}
+                </p>
               </div>
             </div>
-            <PanelComandos catalogo={catalogo.datos ?? []} destino={actual?.numero_serie ?? null} />
+            <PanelComandos key={version} catalogo={catalogo.datos ?? []} destino={actual?.numero_serie ?? null} />
           </section>
 
           <RegistroMensajes numeroSerie={seleccionado} />

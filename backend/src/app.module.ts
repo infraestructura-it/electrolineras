@@ -8,6 +8,8 @@ import { SesionesModule } from './modules/sesiones/sesiones.module';
 import { FacturacionModule } from './modules/facturacion/facturacion.module';
 import { OcppGatewayModule } from './modules/ocpp-gateway/ocpp-gateway.module';
 import { ProformasModule } from './modules/proformas/proformas.module';
+import { ZonasModule } from './modules/zonas/zonas.module';
+import { MonitorModule } from './modules/monitor/monitor.module';
 
 @Module({
   imports: [
@@ -20,6 +22,8 @@ import { ProformasModule } from './modules/proformas/proformas.module';
     FacturacionModule,
     OcppGatewayModule,
     ProformasModule,
+    ZonasModule,
+    MonitorModule,
   ],
 })
 export class AppModule {}

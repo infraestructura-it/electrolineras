@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { cargadoresApi, sesionesApi, Cargador, ErrorApi, formatoCOP } from '@/lib/api';
+import { cargadoresApi, sesionesApi, CargadorPublico as DatosCargador, ErrorApi, formatoCOP } from '@/lib/api';
 import { leerSesionGuardada, guardarSesion, leerContacto, guardarContacto } from '@/lib/almacenLocal';
 
 // Pantalla que abre el QR del cargador: https://<app>/c/<numero_serie>
@@ -10,7 +10,7 @@ export default function CargadorPublico() {
   const router = useRouter();
   const serie = typeof router.query.serie === 'string' ? router.query.serie : null;
 
-  const [cargador, setCargador] = useState<Cargador | null>(null);
+  const [cargador, setCargador] = useState<DatosCargador | null>(null);
   const [noEncontrado, setNoEncontrado] = useState(false);
   const [contacto, setContacto] = useState('');
   const [sesionPrevia, setSesionPrevia] = useState<string | null>(null);
@@ -72,8 +72,10 @@ export default function CargadorPublico() {
     <>
       <section className="app-panel">
         <div className="app-etiqueta">Cargador {cargador.numero_serie}</div>
-        <h1 className="app-titulo">{cargador.ubicacion || 'Estación de carga'}</h1>
-        <p className="app-texto">{cargador.operador_nombre}</p>
+        <h1 className="app-titulo">{cargador.electrolinera?.nombre ?? cargador.ubicacion ?? 'Estación de carga'}</h1>
+        <p className="app-texto">
+          {[cargador.electrolinera ? cargador.ubicacion : null, cargador.electrolinera?.direccion, cargador.operador_nombre].filter(Boolean).join(' · ')}
+        </p>
 
         <dl className="app-datos">
           <div>
@@ -82,7 +84,7 @@ export default function CargadorPublico() {
           </div>
           <div>
             <dt>Conector</dt>
-            <dd>CCS2 · DC</dd>
+            <dd>CCS2 · DC {cargador.potencia_kw} kW</dd>
           </div>
           <div>
             <dt>Estado</dt>

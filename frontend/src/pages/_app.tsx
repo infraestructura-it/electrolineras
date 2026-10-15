@@ -3,12 +3,13 @@ import { useRouter } from 'next/router';
 import PanelLayout from '@/components/PanelLayout';
 import AppUsuarioLayout from '@/components/AppUsuarioLayout';
 import { ProveedorAuth } from '@/lib/auth';
+import 'leaflet/dist/leaflet.css';
 import '@/styles/globals.css';
 
 // App de usuario final (se abre desde el QR del cargador): sin login ni menú del panel.
 const RUTAS_USUARIO = ['/c/', '/carga/'];
-// Pantallas de acceso: con sesión, pero sin barra lateral.
-const RUTAS_ACCESO = ['/login', '/registro'];
+// Pantallas de acceso y el monitor (pantalla completa en otra pestaña): con sesión, sin barra lateral.
+const RUTAS_ACCESO = ['/login', '/registro', '/monitor'];
 
 export default function App({ Component, pageProps }: AppProps) {
   const { pathname } = useRouter();

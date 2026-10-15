@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
-import { alcanceOperador, Publico, Roles, Usuario, UsuarioActual } from '../../comun/decoradores';
+import { alcanceOperador, GESTION, Publico, Roles, Usuario, UsuarioActual } from '../../comun/decoradores';
 import { ClienteProforma, ProformasService } from './proformas.service';
 
 @Controller('proformas')
@@ -23,6 +23,7 @@ export class ProformasController {
     return this.proformas.obtener(id, alcanceOperador(usuario));
   }
 
+  @Roles(...GESTION)
   @Post()
   generar(
     @Body() body: { sesion_id: string; cliente?: Partial<ClienteProforma>; aplicar_retenciones?: boolean },

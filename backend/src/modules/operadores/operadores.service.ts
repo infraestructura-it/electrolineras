@@ -5,6 +5,7 @@ import { AlmacenService } from '../../comun/almacen.service';
 export interface OperadorRegistro {
   id: string;
   nombre: string;
+  nit: string | null; // identifica a la empresa en su licencia de activación
   email_contacto: string | null;
   cuenta_beneficiario: string | null;
   comision_pactada: number | null; // porcentaje: 20 = 20 %
@@ -17,7 +18,10 @@ export class OperadoresService {
   private readonly operadores = new Map<string, OperadorRegistro>();
 
   constructor(private readonly almacen: AlmacenService) {
-    for (const o of this.almacen.leer<OperadorRegistro[]>('operadores', [])) this.operadores.set(o.id, o);
+    for (const o of this.almacen.leer<OperadorRegistro[]>('operadores', [])) {
+      o.nit ??= null;
+      this.operadores.set(o.id, o);
+    }
   }
 
   // alcance: null = todos (admin); un id = solo ese operador.
@@ -35,6 +39,7 @@ export class OperadoresService {
 
   create(data: {
     nombre: string;
+    nit?: string;
     email_contacto?: string;
     cuenta_beneficiario?: string;
     comision_pactada?: number | null;
@@ -43,6 +48,7 @@ export class OperadoresService {
     const operador: OperadorRegistro = {
       id: randomUUID(),
       nombre: data.nombre.trim(),
+      nit: OperadoresService.normalizarNit(data.nit),
       email_contacto: data.email_contacto?.trim() || null,
       cuenta_beneficiario: data.cuenta_beneficiario?.trim() || null,
       comision_pactada: this.validarComision(data.comision_pactada),
@@ -54,13 +60,18 @@ export class OperadoresService {
 
   actualizar(
     id: string,
-    cambios: { nombre?: string; email_contacto?: string; cuenta_beneficiario?: string; comision_pactada?: number | null },
+    cambios: { nombre?: string; nit?: string; email_contacto?: string; cuenta_beneficiario?: string; comision_pactada?: number | null },
     alcance: string | null = null,
   ): OperadorRegistro {
     const operador = this.findOne(id, alcance);
     if (cambios.nombre !== undefined) {
       if (!cambios.nombre.trim()) throw new BadRequestException('El nombre del operador es obligatorio');
       operador.nombre = cambios.nombre.trim();
+    }
+    if (cambios.nit !== undefined) {
+      // El NIT ata la licencia: si la empresa ya tiene una, solo la plataforma lo cambia.
+      if (alcance && operador.nit) throw new ForbiddenException('El NIT solo lo cambia el administrador de la plataforma');
+      operador.nit = OperadoresService.normalizarNit(cambios.nit);
     }
     if (cambios.email_contacto !== undefined) operador.email_contacto = cambios.email_contacto.trim() || null;
     if (cambios.cuenta_beneficiario !== undefined) operador.cuenta_beneficiario = cambios.cuenta_beneficiario.trim() || null;
@@ -76,6 +87,12 @@ export class OperadoresService {
   eliminar(id: string) {
     this.operadores.delete(id);
     this.persistir();
+  }
+
+  // NIT sin puntos, espacios ni dígito de verificación separado: "900.123.456-7" → "9001234567".
+  static normalizarNit(nit: string | null | undefined): string | null {
+    const limpio = String(nit ?? '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+    return limpio || null;
   }
 
   private validarComision(valor: number | null | undefined): number | null {
