@@ -51,6 +51,16 @@ export interface SesionRegistro {
   costo_total: number | null;
   motivo: string | null; // motivo de fin o de falla
   pago: PagoSesion | null;
+  conductor_id?: string | null; // cuenta de la app del conductor, si inició la carga con sesión abierta
+  descuento_puntos?: { puntos: number; valor: number } | null; // redención aplicada al pagar (COP con IVA)
+  puntos_ganados?: number | null;
+}
+
+// Programa de puntos (lo implementa PuntosService): descuento al pagar y acumulación después.
+export interface ProgramaIncentivos {
+  descuento(sesion: SesionRegistro): { puntos: number; valor: number } | null;
+  acumular(sesion: SesionRegistro): number;
+  revertirDescuento(sesion: SesionRegistro): void;
 }
 
 // Referencia a la proforma de una sesión, para que la app muestre el enlace al documento.
@@ -91,6 +101,18 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
     private readonly ocpp: OcppGatewayService,
   ) {
     for (const s of this.almacen.leer<SesionRegistro[]>('sesiones', [])) this.sesiones.set(s.id, s);
+  }
+
+  private validadoresInicio: ((numero_serie: string) => void)[] = [];
+  private programa: ProgramaIncentivos | null = null;
+
+  registrarPrograma(programa: ProgramaIncentivos) {
+    this.programa = programa;
+  }
+
+  // Reglas externas para iniciar una carga (licencias): lanzan una excepción si no se puede.
+  registrarValidadorInicio(fn: (numero_serie: string) => void) {
+    this.validadoresInicio.push(fn);
   }
 
   onModuleInit() {
@@ -144,10 +166,18 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
     return this.vista(this.buscar(id));
   }
 
+  // Cargas hechas con la cuenta de un conductor de la app, de la más reciente a la más antigua.
+  porConductor(conductor_id: string) {
+    return [...this.sesiones.values()]
+      .filter((s) => s.conductor_id === conductor_id)
+      .sort((a, b) => Date.parse(b.inicio) - Date.parse(a.inicio))
+      .map((s) => this.vista(s));
+  }
+
   // ---------- Ciclo de vida de una carga iniciada desde la app ----------
 
-  async iniciar(data: { cargador_id?: string; numero_serie?: string; usuario_id: string }) {
-    const usuario_id = data.usuario_id?.trim();
+  async iniciar(data: { cargador_id?: string; numero_serie?: string; usuario_id: string }, conductor?: { id: string; email: string } | null) {
+    const usuario_id = (conductor?.email ?? data.usuario_id)?.trim();
     if (!usuario_id) throw new BadRequestException('Indica un correo o celular para identificar la carga');
 
     const cargador = data.numero_serie
@@ -157,6 +187,7 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
     if (cargador.estado !== 'activo') throw new ConflictException('El cargador no está disponible en este momento');
     if (cargador.tarifa_por_kwh == null) throw new ConflictException('El cargador aún no tiene tarifa configurada');
     if (this.activaDe(cargador.id)) throw new ConflictException('El cargador ya tiene una carga en curso');
+    for (const validar of this.validadoresInicio) validar(cargador.numero_serie);
 
     const conectado = this.ocpp.estaConectado(cargador.numero_serie);
     if (!conectado && !this.configuracion.obtener().simular_medicion) {
@@ -170,6 +201,7 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
       operador_id: cargador.operador_id,
       usuario_id,
       origen: 'app',
+      conductor_id: conductor?.id ?? null,
       medicion: conectado ? 'ocpp' : 'simulada',
       estado: conectado ? 'iniciando' : 'en_curso',
       // idTag único de la sesión (OCPP 1.6 admite máx. 20 caracteres): el cargador lo devuelve en StartTransaction.
@@ -246,20 +278,37 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
     return this.vista(sesion);
   }
 
-  async pagar(id: string) {
+  // usar_puntos: el conductor dueño de la sesión redime puntos como descuento (solo en su cuenta).
+  async pagar(id: string, opciones: { usar_puntos?: boolean; conductor_id?: string | null } = {}) {
     const sesion = this.buscar(id);
     if (sesion.estado !== 'finalizada' || sesion.costo_total == null) {
       throw new ConflictException('Solo se puede pagar una carga finalizada');
     }
     if (sesion.pago) return this.vista(sesion); // idempotente: no cobrar dos veces
 
+    if (opciones.usar_puntos) {
+      if (!sesion.conductor_id || sesion.conductor_id !== opciones.conductor_id) {
+        throw new ConflictException('Para usar puntos, inicia sesión en la app con la cuenta que hizo la carga');
+      }
+      sesion.descuento_puntos = this.programa?.descuento(sesion) ?? null;
+    }
+    const descuento = sesion.descuento_puntos?.valor ?? 0;
+
     const operador = this.operadoresService.findOne(sesion.operador_id);
-    const resultado = await this.facturacionService.cobrarYDispersar({
-      monto_total: sesion.costo_total,
-      comision_pactada: operador.comision_pactada,
-      cuenta_beneficiario: operador.cuenta_beneficiario,
-    });
+    let resultado;
+    try {
+      resultado = await this.facturacionService.cobrarYDispersar({
+        monto_total: Math.max(0, sesion.costo_total - descuento),
+        comision_pactada: operador.comision_pactada,
+        cuenta_beneficiario: operador.cuenta_beneficiario,
+      });
+    } catch (e) {
+      if (sesion.descuento_puntos) this.programa?.revertirDescuento(sesion);
+      sesion.descuento_puntos = null;
+      throw e;
+    }
     sesion.pago = { ...resultado, fecha: new Date().toISOString() };
+    if (sesion.conductor_id && this.programa) sesion.puntos_ganados = this.programa.acumular(sesion);
     this.persistir();
     // La proforma se genera con el pago; si falla, el pago ya quedó registrado y se puede
     // generar después desde el panel.

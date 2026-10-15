@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Fingerprint } from 'lucide-react';
 import AccesoLayout from '@/components/AccesoLayout';
 import { MensajeError } from '@/components/ui';
 import { configuracionApi } from '@/lib/api';
@@ -9,13 +9,31 @@ import { useAuth } from '@/lib/auth';
 
 export default function Login() {
   const router = useRouter();
-  const { usuario, entrar } = useAuth();
+  const { usuario, entrar, entrarConHuella } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [verClave, setVerClave] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [registroAbierto, setRegistroAbierto] = useState(false);
+  // null = aún no se sabe; WebAuthn solo existe en HTTPS o localhost.
+  const [huella, setHuella] = useState<'si' | 'sin-https' | null>(null);
+
+  useEffect(() => {
+    setHuella(window.isSecureContext && 'PublicKeyCredential' in window ? 'si' : 'sin-https');
+  }, []);
+
+  async function conHuella() {
+    setError(null);
+    setEnviando(true);
+    try {
+      await entrarConHuella();
+    } catch (e) {
+      const err = e as Error;
+      setError(err.name === 'NotAllowedError' ? 'Se canceló la lectura de la huella.' : err.message);
+      setEnviando(false);
+    }
+  }
 
   const siguiente = typeof router.query.siguiente === 'string' && router.query.siguiente.startsWith('/') ? router.query.siguiente : '/';
 
@@ -80,6 +98,17 @@ export default function Login() {
           {enviando ? 'Entrando…' : 'Entrar'}
         </button>
       </form>
+
+      {huella === 'si' && (
+        <button className="btn sec" type="button" onClick={conHuella} disabled={enviando} style={{ width: '100%', marginTop: 12 }}>
+          <Fingerprint size={18} /> Entrar con huella
+        </button>
+      )}
+      {huella === 'sin-https' && (
+        <p className="pie" style={{ fontSize: 13 }}>
+          <Fingerprint size={14} aria-hidden="true" /> La entrada con huella está disponible cuando el panel se abre por HTTPS.
+        </p>
+      )}
 
       {registroAbierto && (
         <p className="pie">

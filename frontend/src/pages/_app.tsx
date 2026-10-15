@@ -6,8 +6,8 @@ import { ProveedorAuth } from '@/lib/auth';
 import 'leaflet/dist/leaflet.css';
 import '@/styles/globals.css';
 
-// App de usuario final (se abre desde el QR del cargador): sin login ni menú del panel.
-const RUTAS_USUARIO = ['/c/', '/carga/'];
+// App de usuario final (QR del cargador, mapa y cuenta del conductor): sin login del panel ni menú.
+const RUTAS_USUARIO = ['/c/', '/carga/', '/app'];
 // Pantallas de acceso y el monitor (pantalla completa en otra pestaña): con sesión, sin barra lateral.
 const RUTAS_ACCESO = ['/login', '/registro', '/monitor'];
 

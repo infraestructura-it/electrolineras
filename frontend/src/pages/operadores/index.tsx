@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pencil, Plus } from 'lucide-react';
 import { Encabezado, MensajeError, Modal, useDatos } from '@/components/ui';
-import { Operador, operadoresApi } from '@/lib/api';
+import { formatoCOP, Operador, operadoresApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
 export default function OperadoresPage() {
@@ -101,6 +101,11 @@ function FormularioOperador({ operador, esAdmin, alGuardar }: { operador: Operad
   const [nit, setNit] = useState(operador?.nit ?? '');
   const [cuenta, setCuenta] = useState(operador?.cuenta_beneficiario ?? '');
   const [comision, setComision] = useState(operador?.comision_pactada != null ? String(operador.comision_pactada) : '');
+  const p = operador?.puntos;
+  const [puntosActivo, setPuntosActivo] = useState(p?.activo ?? true);
+  const [porKwh, setPorKwh] = useState(String(p?.puntos_por_kwh ?? 1));
+  const [valorPunto, setValorPunto] = useState(String(p?.valor_punto_cop ?? 50));
+  const [minimo, setMinimo] = useState(String(p?.minimo_canje ?? 20));
   const [error, setError] = useState<string | null>(null);
   const [guardado, setGuardado] = useState(false);
   const [guardando, setGuardando] = useState(false);
@@ -113,7 +118,8 @@ function FormularioOperador({ operador, esAdmin, alGuardar }: { operador: Operad
     try {
       const datos = { nombre, email_contacto: email, cuenta_beneficiario: cuenta, ...(esAdmin || !operador?.nit ? { nit } : {}) };
       const conComision = esAdmin ? { ...datos, comision_pactada: comision ? Number(comision) : null } : datos;
-      if (operador) await operadoresApi.actualizar(operador.id, conComision);
+      const puntos = { activo: puntosActivo, puntos_por_kwh: Number(porKwh), valor_punto_cop: Number(valorPunto), minimo_canje: Number(minimo) };
+      if (operador) await operadoresApi.actualizar(operador.id, { ...conComision, puntos });
       else await operadoresApi.crear(conComision);
       setGuardado(true);
       alGuardar();
@@ -152,6 +158,36 @@ function FormularioOperador({ operador, esAdmin, alGuardar }: { operador: Operad
         )}
         <span className="ayuda">{esAdmin ? 'Se pacta con cada empresa.' : 'La define la plataforma según el acuerdo comercial.'}</span>
       </div>
+      {operador && (
+        <fieldset className="ancho-completo grupo-campos">
+          <legend>Programa de puntos (app del conductor)</legend>
+          <label className="interruptor">
+            <input type="checkbox" checked={puntosActivo} onChange={(e) => setPuntosActivo(e.target.checked)} />
+            <span>
+              <span className="texto">Los conductores acumulan puntos en mis cargadores</span>
+              <span className="ayuda">Se ganan al pagar y se redimen como descuento en la siguiente carga.</span>
+            </span>
+          </label>
+          <div className="formulario tres">
+            <div className="campo">
+              <label htmlFor="porKwh">Puntos por kWh</label>
+              <input id="porKwh" type="number" min="0" step="0.1" value={porKwh} onChange={(e) => setPorKwh(e.target.value)} disabled={!puntosActivo} />
+            </div>
+            <div className="campo">
+              <label htmlFor="valorPunto">Valor de un punto (COP)</label>
+              <input id="valorPunto" type="number" min="0" step="1" value={valorPunto} onChange={(e) => setValorPunto(e.target.value)} disabled={!puntosActivo} />
+            </div>
+            <div className="campo">
+              <label htmlFor="minimo">Mínimo para redimir</label>
+              <input id="minimo" type="number" min="0" step="1" value={minimo} onChange={(e) => setMinimo(e.target.value)} disabled={!puntosActivo} />
+            </div>
+          </div>
+          <span className="ayuda">
+            Retorno: {Number(porKwh) > 0 && Number(valorPunto) >= 0 ? formatoCOP(Number(porKwh) * Number(valorPunto)) : '—'} por kWh cargado. El
+            descuento lo asume la empresa y se resta del valor cobrado (y de la base de la comisión).
+          </span>
+        </fieldset>
+      )}
       <div className="ancho-completo">
         <MensajeError>{error}</MensajeError>
         {guardado && !esAdmin && <div className="mensaje-ok">Datos guardados.</div>}

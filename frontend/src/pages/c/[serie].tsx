@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { cargadoresApi, sesionesApi, CargadorPublico as DatosCargador, ErrorApi, formatoCOP } from '@/lib/api';
+import { Gift } from 'lucide-react';
+import { cargadoresApi, conductorApi, sesionesApi, CargadorPublico as DatosCargador, Conductor, ErrorApi, formatoCOP, ProgramaCargador } from '@/lib/api';
 import { leerSesionGuardada, guardarSesion, leerContacto, guardarContacto } from '@/lib/almacenLocal';
 
 // Pantalla que abre el QR del cargador: https://<app>/c/<numero_serie>
@@ -16,6 +17,8 @@ export default function CargadorPublico() {
   const [sesionPrevia, setSesionPrevia] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [iniciando, setIniciando] = useState(false);
+  const [conductor, setConductor] = useState<Conductor | null>(null);
+  const [programa, setPrograma] = useState<ProgramaCargador | null>(null);
 
   useEffect(() => {
     if (!serie) return;
@@ -24,10 +27,20 @@ export default function CargadorPublico() {
     cargadoresApi
       .obtenerPorSerie(serie)
       .then(setCargador)
+      .then(() => conductorApi.programa(serie).then(setPrograma).catch(() => null))
       .catch((e: Error) => {
         if (e instanceof ErrorApi && e.estado === 404) setNoEncontrado(true);
         else setError('No pudimos conectarnos con la plataforma. Revisa tu conexión e inténtalo de nuevo.');
       });
+    if (conductorApi.hayCuenta()) {
+      conductorApi
+        .yo()
+        .then((c) => {
+          setConductor(c);
+          setContacto(c.email);
+        })
+        .catch(() => setConductor(null));
+    }
   }, [serie]);
 
   async function iniciar(e: React.FormEvent) {
@@ -97,6 +110,28 @@ export default function CargadorPublico() {
         </dl>
       </section>
 
+      {programa?.activo && (
+        <section className="app-panel app-puntos">
+          <Gift size={20} aria-hidden="true" />
+          <div>
+            <strong>
+              Gana {programa.puntos_por_kwh} {programa.puntos_por_kwh === 1 ? 'punto' : 'puntos'} por kWh
+            </strong>
+            {conductor ? (
+              <span>
+                Tienes {programa.saldo} puntos aquí ({formatoCOP(programa.saldo_cop)}).
+                {programa.puede_redimir ? ' Puedes usarlos al pagar.' : ` Se redimen desde ${programa.minimo_canje}.`}
+              </span>
+            ) : (
+              <span>
+                <Link href={`/app/entrar?siguiente=${encodeURIComponent(`/c/${cargador.numero_serie}`)}`}>Entra o crea tu cuenta</Link> antes
+                de iniciar para acumularlos.
+              </span>
+            )}
+          </div>
+        </section>
+      )}
+
       {sesionPrevia && (
         <Link className="app-aviso" href={`/carga/${sesionPrevia}`}>
           Tienes una carga reciente en este cargador. Ver estado →
@@ -111,6 +146,12 @@ export default function CargadorPublico() {
             <li>Pulsa “Iniciar carga”.</li>
           </ol>
 
+          {conductor ? (
+            <p className="app-texto">
+              Cargando como <strong>{conductor.nombre}</strong> ({conductor.email}).
+            </p>
+          ) : (
+            <>
           <label htmlFor="contacto">Correo o celular</label>
           <input
             id="contacto"
@@ -121,6 +162,8 @@ export default function CargadorPublico() {
             onChange={(e) => setContacto(e.target.value)}
             required
           />
+            </>
+          )}
 
           <button className="btn app-boton" type="submit" disabled={iniciando}>
             {iniciando ? 'Contactando el cargador…' : 'Iniciar carga'}

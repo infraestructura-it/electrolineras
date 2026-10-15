@@ -3,6 +3,7 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 const CLAVE_TOKEN = 'electrolineras:token';
+const CLAVE_CONDUCTOR = 'electrolineras:conductor'; // token de la app del conductor (independiente del panel)
 
 // ---------- Token de sesión del panel ----------
 
@@ -23,6 +24,25 @@ export function guardarToken(token: string | null) {
   }
 }
 
+// ---------- Token de la app del conductor ----------
+
+export function leerTokenConductor(): string | null {
+  try {
+    return window.localStorage.getItem(CLAVE_CONDUCTOR);
+  } catch {
+    return null;
+  }
+}
+
+export function guardarTokenConductor(token: string | null) {
+  try {
+    if (token) window.localStorage.setItem(CLAVE_CONDUCTOR, token);
+    else window.localStorage.removeItem(CLAVE_CONDUCTOR);
+  } catch {
+    /* almacenamiento no disponible */
+  }
+}
+
 export class ErrorApi extends Error {
   constructor(
     mensaje: string,
@@ -32,8 +52,9 @@ export class ErrorApi extends Error {
   }
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = typeof window !== 'undefined' ? leerToken() : null;
+// quien: qué token se envía. 'panel' (por defecto) o 'conductor' (app del usuario final).
+async function request<T>(path: string, options?: RequestInit, quien: 'panel' | 'conductor' = 'panel'): Promise<T> {
+  const token = typeof window === 'undefined' ? null : quien === 'conductor' ? leerTokenConductor() : leerToken();
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: {
@@ -53,7 +74,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       /* respuesta no JSON */
     }
     if (res.status === 401 && typeof window !== 'undefined') {
-      window.dispatchEvent(new Event('electrolineras:sesion-expirada'));
+      if (quien === 'conductor') guardarTokenConductor(null);
+      else window.dispatchEvent(new Event('electrolineras:sesion-expirada'));
     }
     throw new ErrorApi(mensaje || `Error ${res.status} en ${path}`, res.status);
   }
@@ -118,6 +140,15 @@ export interface Operador {
   email_contacto: string | null;
   cuenta_beneficiario: string | null;
   comision_pactada: number | null; // porcentaje: 20 = 20 %
+  puntos: ProgramaPuntos;
+}
+
+// Programa de puntos de la empresa: puntos por kWh, valor en pesos de cada punto y mínimo para redimir.
+export interface ProgramaPuntos {
+  activo: boolean;
+  puntos_por_kwh: number;
+  valor_punto_cop: number;
+  minimo_canje: number;
 }
 
 export type EstadoCargador = 'activo' | 'inactivo' | 'en_falla';
@@ -260,6 +291,9 @@ export interface SesionCarga {
   cargador_conectado: boolean;
   pago: PagoSesion | null;
   proforma: { id: string; numero: string; codigo_verificacion: string; estado: 'vigente' | 'anulada' } | null;
+  conductor_id?: string | null;
+  descuento_puntos?: { puntos: number; valor: number } | null; // COP con IVA
+  puntos_ganados?: number | null;
 }
 
 export interface RepartoFacturacion {
@@ -431,6 +465,23 @@ export const authApi = {
   yo: () => request<Usuario>('/auth/yo'),
 };
 
+// Huella (passkeys / WebAuthn): las opciones y respuestas son JSON de @simplewebauthn.
+export interface HuellaRegistrada {
+  id: string;
+  nombre: string;
+  creado: string;
+  ultimo_uso: string | null;
+}
+
+export const huellaApi = {
+  listar: () => request<HuellaRegistrada[]>('/auth/huella'),
+  opcionesRegistro: () => request<Record<string, unknown>>('/auth/huella/registro/opciones', enviar('POST')),
+  registrar: (respuesta: unknown, nombre: string) => request<HuellaRegistrada>('/auth/huella/registro', enviar('POST', { respuesta, nombre })),
+  eliminar: (id: string) => request<void>(`/auth/huella/${encodeURIComponent(id)}`, enviar('DELETE')),
+  opcionesLogin: () => request<Record<string, unknown>>('/auth/huella/login/opciones', enviar('POST')),
+  login: (respuesta: unknown) => request<{ token: string; usuario: Usuario }>('/auth/huella/login', enviar('POST', { respuesta })),
+};
+
 export const usuariosApi = {
   listar: () => request<Usuario[]>('/usuarios'),
   crear: (data: { email: string; nombre: string; password: string; rol: Rol; operador_id?: string; zona_id?: string | null }) =>
@@ -478,8 +529,41 @@ export const operadoresApi = {
     request<Operador>('/operadores', enviar('POST', data)),
   actualizar: (
     id: string,
-    data: { nombre?: string; nit?: string; email_contacto?: string; cuenta_beneficiario?: string; comision_pactada?: number | null },
+    data: {
+      nombre?: string;
+      nit?: string;
+      email_contacto?: string;
+      cuenta_beneficiario?: string;
+      comision_pactada?: number | null;
+      puntos?: Partial<ProgramaPuntos>;
+    },
   ) => request<Operador>(`/operadores/${id}`, enviar('PATCH', data)),
+};
+
+// ---------- Licencias ----------
+// backend/src/modules/licencias
+
+export type EstadoLicencia = 'sin_control' | 'sin_licencia' | 'vigente' | 'por_vencer' | 'en_gracia' | 'vencida';
+
+export interface ResumenLicencias {
+  configurado: boolean;
+  dias_gracia: number;
+  empresas: {
+    operador_id: string;
+    nombre: string;
+    nit: string | null;
+    estado: EstadoLicencia;
+    licencia: { id: string; empresa: string; nit: string; max_cargadores: number; emitida: string; vence: string; activada: string } | null;
+    dias_restantes: number | null;
+    usados: number;
+    max: number | null;
+  }[];
+}
+
+export const licenciasApi = {
+  resumen: () => request<ResumenLicencias>('/licencias'),
+  activar: (licencia: string) => request<unknown>('/licencias', enviar('POST', { licencia })),
+  eliminar: (id: string) => request<void>(`/licencias/${encodeURIComponent(id)}`, enviar('DELETE')),
 };
 
 // ---------- Zonas y electrolineras ----------
@@ -525,12 +609,71 @@ export const cargadoresApi = {
 export const sesionesApi = {
   listar: () => request<SesionCarga[]>('/sesiones'),
   obtener: (id: string) => request<SesionCarga>(`/sesiones/${id}`),
+  // Desde la app: envía el token del conductor (si inició sesión) para acumular puntos.
   iniciar: (data: { numero_serie?: string; cargador_id?: string; usuario_id: string }) =>
-    request<SesionCarga>('/sesiones', enviar('POST', data)),
+    request<SesionCarga>('/sesiones', enviar('POST', data), 'conductor'),
   // kwh_consumidos es opcional: sin él, el backend usa la última medición (o pide RemoteStop por OCPP).
   finalizar: (id: string, kwh_consumidos?: number) =>
     request<SesionCarga>(`/sesiones/${id}/finalizar`, enviar('POST', kwh_consumidos === undefined ? {} : { kwh_consumidos })),
-  pagar: (id: string) => request<SesionCarga>(`/sesiones/${id}/pagar`, enviar('POST')),
+  pagar: (id: string, usar_puntos = false) =>
+    request<SesionCarga>(`/sesiones/${id}/pagar`, enviar('POST', { usar_puntos }), 'conductor'),
+};
+
+// ---------- App del conductor: cuenta, cargas y puntos ----------
+// backend/src/modules/conductores
+
+export interface Conductor {
+  id: string;
+  nombre: string;
+  email: string;
+  celular: string | null;
+  creado: string;
+}
+
+export interface MovimientoPuntos {
+  id: string;
+  operador_id: string;
+  operador_nombre: string;
+  tipo: 'acumulacion' | 'redencion' | 'reverso';
+  puntos: number; // con signo
+  valor_cop: number;
+  sesion_id: string | null;
+  fecha: string;
+  detalle: string;
+}
+
+export interface ResumenPuntos {
+  saldo_total: number;
+  valor_total_cop: number;
+  puntos_ganados: number;
+  ahorro_cop: number;
+  empresas: { operador_id: string; operador_nombre: string; saldo: number; valor_cop: number; minimo_canje: number; programa_activo: boolean }[];
+  movimientos: MovimientoPuntos[];
+}
+
+export interface ProgramaCargador extends ProgramaPuntos {
+  saldo: number;
+  saldo_cop: number;
+  puede_redimir: boolean;
+}
+
+const entrarConductor = (r: { token: string; conductor: Conductor }) => {
+  guardarTokenConductor(r.token);
+  return r.conductor;
+};
+
+export const conductorApi = {
+  hayCuenta: () => typeof window !== 'undefined' && !!leerTokenConductor(),
+  registro: (data: { nombre: string; email: string; celular?: string; password: string }) =>
+    request<{ token: string; conductor: Conductor }>('/conductor/registro', enviar('POST', data), 'conductor').then(entrarConductor),
+  login: (email: string, password: string) =>
+    request<{ token: string; conductor: Conductor }>('/conductor/login', enviar('POST', { email, password }), 'conductor').then(entrarConductor),
+  salir: () => guardarTokenConductor(null),
+  yo: () => request<Conductor & { saldo_puntos: number; valor_puntos_cop: number }>('/conductor/yo', undefined, 'conductor'),
+  cargas: () => request<SesionCarga[]>('/conductor/cargas', undefined, 'conductor'),
+  puntos: () => request<ResumenPuntos>('/conductor/puntos', undefined, 'conductor'),
+  programa: (numero_serie: string) =>
+    request<ProgramaCargador>(`/conductor/programa/${encodeURIComponent(numero_serie)}`, undefined, 'conductor'),
 };
 
 export const estadisticasApi = {

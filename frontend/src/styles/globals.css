@@ -233,6 +233,7 @@ h3 { font-size: 15px; font-weight: 600; }
 }
 
 .superficie-titulo p { margin: 2px 0 0; color: var(--tenue); font-size: 13px; }
+.titulo-icono { display: flex; align-items: center; gap: 8px; }
 
 .rejilla { display: grid; gap: 18px; }
 .rejilla + .rejilla, .kpis + .rejilla { margin-top: 18px; }
@@ -353,6 +354,11 @@ h3 { font-size: 15px; font-weight: 600; }
 .formulario { display: grid; gap: 14px; }
 .formulario.dos { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 @media (max-width: 700px) { .formulario.dos { grid-template-columns: 1fr; } }
+.formulario.tres { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+@media (max-width: 700px) { .formulario.tres { grid-template-columns: 1fr; } }
+.grupo-campos { border: 1px solid var(--linea-suave); border-radius: var(--radio-control); padding: 14px 16px 16px; margin: 0; display: grid; gap: 14px; min-width: 0; }
+.grupo-campos > .ayuda { font-size: 12px; color: var(--tenue); }
+.grupo-campos legend { padding: 0 6px; font-size: 13px; font-weight: 600; color: var(--texto-2); }
 .formulario .ancho-completo { grid-column: 1 / -1; }
 
 .campo { display: grid; gap: 6px; }
@@ -616,10 +622,48 @@ table.tabla { width: 100%; border-collapse: collapse; font-size: 14px; }
   .acceso-arte { display: none; }
 }
 
-/* ---------- App de usuario final (rutas /c/* y /carga/*) ---------- */
+/* ---------- App de usuario final (rutas /c/*, /carga/* y /app) ---------- */
 
-.app-header { padding: 14px 16px; border-bottom: 1px solid var(--linea-suave); display: flex; align-items: center; gap: 10px; }
-.app-marca { font-weight: 700; letter-spacing: -0.01em; display: flex; align-items: center; gap: 10px; }
+.app-header { padding: 12px 16px; border-bottom: 1px solid var(--linea-suave); display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.app-marca { font-weight: 700; letter-spacing: -0.01em; display: flex; align-items: center; gap: 10px; color: var(--texto); text-decoration: none; }
+.app-nav { display: flex; gap: 4px; }
+.app-nav a { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 10px; color: var(--texto-2); text-decoration: none; font-size: 14px; }
+.app-nav a:hover { background: var(--panel-2); color: var(--texto); }
+@media (max-width: 380px) { .app-nav span { display: none; } }
+
+.app-encabezado { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.app-encabezado .app-titulo { margin: 0; }
+.app-encabezado .btn { display: inline-flex; align-items: center; gap: 6px; }
+.app-mapa { border-radius: 18px; overflow: hidden; border: 1px solid var(--linea-suave); }
+.app-filtros { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 8px 13px; border-radius: 999px; border: 1px solid var(--linea); background: transparent; color: var(--texto-2); font: inherit; font-size: 13px; cursor: pointer; }
+.chip:hover { color: var(--texto); }
+.chip.activo { background: var(--voltaje-suave); border-color: var(--voltaje); color: var(--voltaje); }
+.app-pestanas { justify-content: center; }
+.app-subtitulo { font-size: 16px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+
+.app-sitio { display: grid; gap: 12px; scroll-margin-top: 12px; }
+.app-sitio.elegido { border-color: var(--voltaje); }
+.app-sitio-cabeza { display: flex; justify-content: space-between; gap: 12px; }
+.app-sitio-cabeza h2 { font-size: 17px; margin: 0; display: flex; align-items: center; gap: 6px; }
+.app-sitio-dist { display: grid; justify-items: end; align-content: start; gap: 6px; white-space: nowrap; }
+.app-sitio-cargadores { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.app-sitio-cargadores a { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--panel-2); color: var(--texto); text-decoration: none; }
+.app-sitio-cargadores a > span:first-child { display: grid; gap: 2px; min-width: 0; }
+.app-sitio-cargadores .app-nota { margin: 0; }
+.app-boton-sec { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; }
+
+.app-puntos { display: flex; gap: 12px; align-items: flex-start; color: var(--texto-2); font-size: 14px; }
+.app-puntos > svg { color: var(--voltaje); flex: none; margin-top: 2px; }
+.app-puntos > div { display: grid; gap: 4px; }
+.app-puntos strong { color: var(--texto); }
+.app-puntos a { color: var(--voltaje); }
+.app-check { display: flex; gap: 10px; align-items: center; color: var(--texto); font-weight: 600; cursor: pointer; }
+.app-check input { width: 20px; height: 20px; accent-color: var(--voltaje); }
+.texto-voltaje { color: var(--voltaje); }
+.texto-flujo { color: var(--flujo); }
+.sin-corte { white-space: nowrap; }
+.app-nota a { color: var(--voltaje); }
 .app-marca .marca-sello { width: 28px; height: 28px; border-radius: 8px; }
 
 .app-usuario { max-width: 480px; margin: 0 auto; padding: 20px 16px 48px; display: flex; flex-direction: column; gap: 14px; }
@@ -894,3 +938,11 @@ table.tabla { width: 100%; border-collapse: collapse; font-size: 14px; }
 .monitor-libre { min-height: 58px; display: flex; align-items: center; }
 .monitor-tarjeta-pie { display: flex; align-items: center; gap: 8px; color: var(--tenue); font-size: 0.82rem; border-top: 1px solid var(--linea-suave); padding-top: 10px; }
 .monitor-pie { margin-top: auto; text-align: center; }
+.usuario-enlace { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; color: inherit; text-decoration: none; border-radius: var(--radio-control); }
+.usuario-enlace:hover .usuario-nombre { color: var(--voltaje); }
+.barra-uso { height: 8px; border-radius: 99px; background: var(--tinta-2); overflow: hidden; margin-top: 6px; }
+.barra-uso > span { display: block; height: 100%; background: var(--flujo); border-radius: 99px; }
+.barra-uso > span.excedida { background: var(--falla); }
+.aviso-licencia { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; padding: 10px 14px; border-radius: var(--radio-control); font-size: 0.92rem; }
+.aviso-licencia.alerta { background: var(--voltaje-suave); color: var(--texto); }
+.aviso-licencia.falla { background: var(--falla-suave); color: var(--texto); }

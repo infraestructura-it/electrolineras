@@ -9,7 +9,12 @@ export interface OperadorRegistro {
   email_contacto: string | null;
   cuenta_beneficiario: string | null;
   comision_pactada: number | null; // porcentaje: 20 = 20 %
+  // Programa de puntos de la empresa: el conductor gana puntos_por_kwh y cada punto vale valor_punto_cop
+  // de descuento en las cargas de esta empresa (desde minimo_canje puntos).
+  puntos: { activo: boolean; puntos_por_kwh: number; valor_punto_cop: number; minimo_canje: number };
 }
+
+export const PUNTOS_POR_DEFECTO = { activo: true, puntos_por_kwh: 1, valor_punto_cop: 50, minimo_canje: 20 };
 
 // Datos persistidos en data/operadores.json (ver AlmacenService).
 // TODO: reemplazar por el repositorio TypeORM de Operador al conectar PostgreSQL.
@@ -20,6 +25,7 @@ export class OperadoresService {
   constructor(private readonly almacen: AlmacenService) {
     for (const o of this.almacen.leer<OperadorRegistro[]>('operadores', [])) {
       o.nit ??= null;
+      o.puntos ??= { ...PUNTOS_POR_DEFECTO };
       this.operadores.set(o.id, o);
     }
   }
@@ -52,6 +58,7 @@ export class OperadoresService {
       email_contacto: data.email_contacto?.trim() || null,
       cuenta_beneficiario: data.cuenta_beneficiario?.trim() || null,
       comision_pactada: this.validarComision(data.comision_pactada),
+      puntos: { ...PUNTOS_POR_DEFECTO },
     };
     this.operadores.set(operador.id, operador);
     this.persistir();
@@ -60,7 +67,7 @@ export class OperadoresService {
 
   actualizar(
     id: string,
-    cambios: { nombre?: string; nit?: string; email_contacto?: string; cuenta_beneficiario?: string; comision_pactada?: number | null },
+    cambios: { puntos?: Partial<OperadorRegistro['puntos']>; nombre?: string; nit?: string; email_contacto?: string; cuenta_beneficiario?: string; comision_pactada?: number | null },
     alcance: string | null = null,
   ): OperadorRegistro {
     const operador = this.findOne(id, alcance);
@@ -73,6 +80,7 @@ export class OperadoresService {
       if (alcance && operador.nit) throw new ForbiddenException('El NIT solo lo cambia el administrador de la plataforma');
       operador.nit = OperadoresService.normalizarNit(cambios.nit);
     }
+    if (cambios.puntos !== undefined) operador.puntos = this.validarPuntos({ ...operador.puntos, ...cambios.puntos });
     if (cambios.email_contacto !== undefined) operador.email_contacto = cambios.email_contacto.trim() || null;
     if (cambios.cuenta_beneficiario !== undefined) operador.cuenta_beneficiario = cambios.cuenta_beneficiario.trim() || null;
     // La comisión la negocia la plataforma: solo un admin la cambia (alcance null).
@@ -93,6 +101,20 @@ export class OperadoresService {
   static normalizarNit(nit: string | null | undefined): string | null {
     const limpio = String(nit ?? '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
     return limpio || null;
+  }
+
+  private validarPuntos(p: OperadorRegistro['puntos']): OperadorRegistro['puntos'] {
+    const n = (v: unknown, min: number, max: number, campo: string) => {
+      const x = Number(v);
+      if (!Number.isFinite(x) || x < min || x > max) throw new BadRequestException(`${campo} debe estar entre ${min} y ${max}`);
+      return x;
+    };
+    return {
+      activo: Boolean(p.activo),
+      puntos_por_kwh: n(p.puntos_por_kwh, 0, 1000, 'Puntos por kWh'),
+      valor_punto_cop: n(p.valor_punto_cop, 0, 100000, 'El valor del punto'),
+      minimo_canje: Math.round(n(p.minimo_canje, 0, 1_000_000, 'El mínimo para canjear')),
+    };
   }
 
   private validarComision(valor: number | null | undefined): number | null {

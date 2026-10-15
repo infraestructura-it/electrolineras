@@ -7,6 +7,7 @@ import { OperadoresService } from '../operadores/operadores.service';
 import { UsuariosService } from '../usuarios/usuarios.service';
 
 const DURACION_TOKEN_S = 12 * 60 * 60; // 12 horas
+const DURACION_TOKEN_CONDUCTOR_S = 60 * 24 * 60 * 60; // 60 días: la app del conductor no pide entrar a cada rato
 
 // Token propio y simple: base64url(payload).base64url(HMAC-SHA256).
 // El secreto viene de JWT_SECRET o se genera una vez y se guarda en data/, así los
@@ -51,6 +52,11 @@ export class AuthService {
     }
   }
 
+  // Token de sesión para un usuario ya autenticado por otro medio (huella).
+  emitirToken(usuario: UsuarioActual) {
+    return this.firmar(usuario);
+  }
+
   verificar(token: string): UsuarioActual | null {
     const [cuerpo, firma] = token.split('.');
     if (!cuerpo || !firma) return null;
@@ -58,9 +64,34 @@ export class AuthService {
     const recibida = Buffer.from(firma);
     if (esperada.length !== recibida.length || !timingSafeEqual(esperada, recibida)) return null;
     try {
-      const { sub, exp } = JSON.parse(Buffer.from(cuerpo, 'base64url').toString('utf8'));
+      const { sub, exp, tipo } = JSON.parse(Buffer.from(cuerpo, 'base64url').toString('utf8'));
       if (typeof exp !== 'number' || exp < Date.now() / 1000) return null;
+      if (tipo === 'conductor') return null; // un token de la app del conductor no abre el panel
       return this.usuarios.obtenerActivo(sub); // datos y rol siempre actualizados
+    } catch {
+      return null;
+    }
+  }
+
+  // ---------- Tokens de la app del conductor (mismo esquema, con tipo "conductor") ----------
+
+  firmarConductor(conductor: { id: string; email: string }) {
+    const cuerpo = Buffer.from(
+      JSON.stringify({ sub: conductor.id, email: conductor.email, tipo: 'conductor', exp: Math.floor(Date.now() / 1000) + DURACION_TOKEN_CONDUCTOR_S }),
+    ).toString('base64url');
+    return `${cuerpo}.${this.hmac(cuerpo)}`;
+  }
+
+  verificarConductor(token: string): { id: string; email: string } | null {
+    const [cuerpo, firma] = token.split('.');
+    if (!cuerpo || !firma) return null;
+    const esperada = Buffer.from(this.hmac(cuerpo));
+    const recibida = Buffer.from(firma);
+    if (esperada.length !== recibida.length || !timingSafeEqual(esperada, recibida)) return null;
+    try {
+      const { sub, email, exp, tipo } = JSON.parse(Buffer.from(cuerpo, 'base64url').toString('utf8'));
+      if (tipo !== 'conductor' || typeof exp !== 'number' || exp < Date.now() / 1000) return null;
+      return { id: sub, email };
     } catch {
       return null;
     }

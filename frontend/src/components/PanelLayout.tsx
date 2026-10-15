@@ -23,7 +23,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { NOMBRE_ROL, Rol } from '@/lib/api';
+import { licenciasApi, NOMBRE_ROL, ResumenLicencias, Rol } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
 interface Enlace {
@@ -82,6 +82,13 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { usuario, cargando, esAdmin, tieneRol, salir } = useAuth();
   const [menuAbierto, setMenuAbierto] = useState(false);
+  const [licencias, setLicencias] = useState<ResumenLicencias | null>(null);
+
+  // Aviso de licencia (por vencer, vencida o faltante) en todo el panel.
+  useEffect(() => {
+    if (!usuario) return;
+    licenciasApi.resumen().then(setLicencias).catch(() => setLicencias(null));
+  }, [usuario, router.pathname]);
 
   // Sin sesión: al login, recordando a dónde quería ir.
   useEffect(() => {
@@ -153,11 +160,13 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="lateral-usuario">
-          <span className="avatar" aria-hidden="true">{iniciales(usuario.nombre)}</span>
-          <div className="usuario-datos">
-            <div className="usuario-nombre">{usuario.nombre}</div>
-            <div className="usuario-rol">{NOMBRE_ROL[usuario.rol] ?? usuario.rol}</div>
-          </div>
+          <Link href="/cuenta" className="usuario-enlace" title="Mi cuenta: clave y huella">
+            <span className="avatar" aria-hidden="true">{iniciales(usuario.nombre)}</span>
+            <div className="usuario-datos">
+              <div className="usuario-nombre">{usuario.nombre}</div>
+              <div className="usuario-rol">{NOMBRE_ROL[usuario.rol] ?? usuario.rol}</div>
+            </div>
+          </Link>
           <button className="btn-icono" onClick={salir} aria-label="Cerrar sesión" title="Cerrar sesión">
             <LogOut size={18} />
           </button>
@@ -165,6 +174,7 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
       </aside>
 
       <main className="contenido">
+        <AvisoLicencias resumen={licencias} />
         {sinPermiso ? (
           <div className="vacio">
             <h1>Sin acceso</h1>
@@ -174,6 +184,32 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
           children
         )}
       </main>
+    </div>
+  );
+}
+
+function AvisoLicencias({ resumen }: { resumen: ResumenLicencias | null }) {
+  if (!resumen?.configurado) return null;
+  const problemas = resumen.empresas.filter((e) => ['sin_licencia', 'vencida', 'en_gracia', 'por_vencer'].includes(e.estado));
+  if (!problemas.length) return null;
+  const grave = problemas.some((e) => e.estado === 'sin_licencia' || e.estado === 'vencida');
+  const detalle = problemas
+    .slice(0, 3)
+    .map((e) =>
+      e.estado === 'sin_licencia'
+        ? `${e.nombre}: sin licencia`
+        : e.estado === 'vencida'
+          ? `${e.nombre}: licencia vencida, cargas bloqueadas`
+          : e.estado === 'en_gracia'
+            ? `${e.nombre}: licencia vencida, quedan días de gracia`
+            : `${e.nombre}: vence en ${e.dias_restantes} días`,
+    )
+    .join(' · ');
+  return (
+    <div className={`aviso-licencia ${grave ? 'falla' : 'alerta'}`} role="status">
+      <KeyRound size={16} aria-hidden="true" />
+      <span>{detalle}</span>
+      <Link href="/licencias">Ver licencias</Link>
     </div>
   );
 }

@@ -207,7 +207,12 @@ export class ProformasService implements OnModuleInit {
 
     // La tarifa al usuario incluye el IVA (precio al consumidor final): se desagrega.
     const factorIva = 1 + f.iva_porcentaje / 100;
-    const total = r2(sesion.costo_total);
+    // Descuento por puntos de la app (valor con IVA): reduce la base antes de impuestos.
+    const bruto = r2(sesion.costo_total);
+    const descuentoConIva = Math.min(bruto, r2(sesion.descuento_puntos?.valor ?? 0));
+    const total = r2(bruto - descuentoConIva);
+    const totalGeneral = r2(bruto / factorIva);
+    const descuento = r2(descuentoConIva / factorIva);
     const subtotal = r2(total / factorIva);
     const iva = r2(total - subtotal);
     const precioSinIva = r2(sesion.tarifa_por_kwh / factorIva);
@@ -255,12 +260,12 @@ export class ProformasService implements OnModuleInit {
           cantidad: sesion.kwh_consumidos,
           unidad: 'kWh',
           precio_unitario: precioSinIva,
-          valor_total: subtotal,
+          valor_total: totalGeneral,
         },
       ],
       totales: {
-        total_general: subtotal,
-        descuento: 0,
+        total_general: totalGeneral,
+        descuento,
         subtotal,
         iva_porcentaje: f.iva_porcentaje,
         iva,

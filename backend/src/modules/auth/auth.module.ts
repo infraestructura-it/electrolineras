@@ -7,11 +7,12 @@ import { UsuariosController } from '../usuarios/usuarios.controller';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
+import { HuellaService } from './huella.service';
 
 @Module({
   imports: [OperadoresModule, ZonasModule],
   controllers: [AuthController, UsuariosController],
-  providers: [UsuariosService, AuthService, { provide: APP_GUARD, useClass: AuthGuard }],
+  providers: [UsuariosService, AuthService, HuellaService, { provide: APP_GUARD, useClass: AuthGuard }],
   exports: [UsuariosService, AuthService],
 })
 export class AuthModule {}

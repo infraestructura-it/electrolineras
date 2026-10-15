@@ -5,10 +5,11 @@ Idioma del proyecto: **español** (código, comentarios, commits y documentació
 
 ## Qué es
 
-Plataforma de gestión y facturación de cargadores eléctricos DC. Un **operador** registra
-sus cargadores, define tarifas y factura a los usuarios finales; la plataforma retiene una
-comisión configurable por operador. Hardware de referencia: cargador DC 30 kW **MDXDC3001**,
-**OCPP 1.6J** (`ws`/`wss`, confirmado en el manual), conector CCS2, RFID y QR. Detalle completo
+Plataforma de gestión y facturación de cargadores eléctricos DC. Una **empresa** (operador)
+registra sus electrolineras y cargadores, define tarifas y factura a los conductores; la
+plataforma retiene una comisión configurable por empresa. Hardware de referencia: cargador DC
+30 kW **MDXDC3001**, **OCPP 1.6J** (`ws`/`wss`, confirmado en el manual), conector CCS2, RFID y QR.
+El gateway también habla **OCPP 2.0.1** (seleccionable por cargador). Detalle completo
 y configuración del cargador en `docs/especificacion-tecnica.md` (secciones 8 y 9).
 
 ## Estructura
@@ -17,21 +18,27 @@ y configuración del cargador en `docs/especificacion-tecnica.md` (secciones 8 y
 electrolineras/
 ├── backend/                 # API NestJS 10 (TypeScript) — puerto 3000 (API + gateway OCPP)
 │   ├── src/comun/           # AlmacenService (persistencia JSON), decoradores @Publico/@Roles/@Usuario
-│   ├── src/modules/         # auth, usuarios, configuracion, operadores, cargadores, sesiones,
-│   │                        # facturacion, proformas, ocpp-gateway
+│   ├── src/modules/         # auth (+ huella), usuarios, configuracion, operadores (empresas),
+│   │                        # zonas, electrolineras, cargadores, sesiones, monitor, facturacion,
+│   │                        # proformas, licencias, conductores (app + puntos), ocpp-gateway
+│   ├── licencia-publica.pem # (cuando IIT la publique) activa el licenciamiento
 │   └── .env.example         # ADMIN_EMAIL, ADMIN_PASSWORD, JWT_SECRET, DATA_DIR, PORT
 ├── frontend/                # Next.js 14 (pages router) — puerto 3001 en producción
 │   ├── src/lib/api.ts       # cliente único de API: toda llamada al backend pasa por aquí
 │   ├── src/lib/auth.tsx     # sesión del panel (token en localStorage, ProveedorAuth/useAuth)
-│   ├── src/components/      # PanelLayout (barra lateral), ui.tsx, Graficos, QrCargador,
-│   │                        # DocumentoProforma + HojaEscalada (formato carta de la proforma)
+│   ├── src/components/      # PanelLayout (barra lateral), ui.tsx, Graficos, QrCargador, Mapa
+│   │                        # (Leaflet, carga dinámica), DocumentoProforma + HojaEscalada
+│   ├── src/pages/app/       # app del conductor: mapa, entrar/registro, cuenta y puntos
 │   ├── src/pages/c/         # app de usuario: pantalla que abre el QR del cargador (sin login)
-│   ├── src/pages/carga/     # app de usuario: carga en vivo, pago y recibo (sin login)
+│   ├── src/pages/carga/     # app de usuario: carga en vivo, pago (con puntos) y recibo
 │   ├── src/pages/p/         # documento público de una proforma (lo abre su QR, sin login)
 │   ├── src/pages/login.tsx, registro.tsx
-│   └── src/pages/*/         # panel: inicio, cargadores, sesiones, operadores, proformas,
-│                            # facturacion, ocpp (consola), usuarios, configuracion
-├── simulador/               # simulador OCPP del MDXDC3001, independiente (solo depende de ws)
+│   ├── src/pages/monitor/   # estado de cargadores en vivo, pantalla completa (otra pestaña)
+│   └── src/pages/*/         # panel: inicio, electrolineras, zonas, cargadores, sesiones,
+│                            # operadores (Empresas), proformas, facturacion, ocpp (consola),
+│                            # usuarios, licencias, cuenta (huella y clave), configuracion
+├── simulador/               # simulador OCPP 1.6J/2.0.1 del MDXDC3001 (solo depende de ws)
+├── herramientas/licencias/  # licencias-iit.js: llaves y emisión de licencias (solo IIT)
 ├── package.json             # atajo: `npm start -- <url> <serie>` en la raíz corre el simulador
 ├── docs/                    # especificación técnica y modelo de datos
 ├── scripts/proxmox/         # crear-lxc.sh (contenedor Ubuntu 24.04) y migrar-datos.sh
@@ -62,14 +69,22 @@ Producción con PM2, desde la raíz: `pm2 start ecosystem.config.js && pm2 save`
 - Montos en **COP**; formatear en el frontend con `formatoCOP` / `formatoKwh` de `api.ts`.
 - `numero_serie` del cargador = `pile_number_master` configurado en el equipo, y es lo que
   va en la URL del QR (`/c/<numero_serie>`).
-- La app de usuario (`/c/*`, `/carga/*`) usa `AppUsuarioLayout`, sin login ni menú del panel;
-  `/login` y `/registro` van sin barra lateral; el resto usa `PanelLayout` (lo decide `_app.tsx`).
+- La app de usuario (`/c/*`, `/carga/*`, `/app*`) usa `AppUsuarioLayout`, sin login del panel;
+  `/login`, `/registro` y `/monitor` van sin barra lateral; el resto usa `PanelLayout` (`_app.tsx`).
 - **Autenticación**: guard global (`AuthGuard`). Toda ruta exige `Authorization: Bearer <token>`
-  salvo las marcadas con `@Publico()`. `@Roles('admin')` restringe a administradores.
-  Un usuario `operador` solo ve lo de su `operador_id`: en los servicios se pasa
-  `alcanceOperador(usuario)` (null = admin, ve todo).
-- Rutas solo de admin en el panel: `/ocpp`, `/usuarios`, `/configuracion` (lista `soloAdmin`
-  en `PanelLayout`); el backend también las protege con `@Roles('admin')`.
+  salvo las marcadas con `@Publico()`. `@Roles(...)` restringe por rol.
+- **Jerarquía y roles** (`comun/decoradores.ts`): Zona → Empresa → Electrolinera → Cargador.
+  - `admin`: la plataforma (IIT), ve todo.
+  - `administrador`: administrador de una empresa (gestiona sus electrolineras, cargadores,
+    usuarios y proformas). El antiguo rol `operador` se migra solo a `administrador`.
+  - `operario`: de una empresa, opcionalmente limitado a una zona (`zona_id`); opera y consulta,
+    no crea ni edita. `GESTION = ['admin', 'administrador']`.
+  - En los servicios se pasa `alcanceOperador(usuario)` (null = admin) y, para el operario,
+    `alcanceZona(usuario)` → `cargadores.seriesVisibles(...)`.
+- El menú del panel se arma por rol en `PanelLayout`; el backend protege igual con `@Roles`.
+- La app del conductor tiene **su propio token** (tipo `conductor`, 60 días, clave
+  `electrolineras:conductor` en el navegador). `AuthService.verificar()` lo rechaza para el panel;
+  en `api.ts` se envía con `request(..., 'conductor')`.
 - **Sistema visual** (`globals.css`): tokens `--tinta`, `--panel`, `--voltaje` (ámbar, marca y
   acción principal), `--flujo` (conectado/correcto), `--falla`. Fuente Sora; JetBrains Mono
   solo para datos técnicos (JSON OCPP, números de serie). Colores de gráficos
@@ -89,28 +104,48 @@ Pública = sin login. Admin = solo administradores. El resto exige login (con al
 |---|---|---|
 | `POST /auth/login`, `POST /auth/registro` | Pública | Login y autorregistro de operador (empresa + usuario) |
 | `GET /auth/yo` | Login | Usuario actual |
-| `GET/POST /usuarios`, `PATCH /usuarios/:id/activo` | Admin | Gestión de usuarios |
+| `GET /auth/huella`, `POST /auth/huella/registro/opciones`, `POST /auth/huella/registro`, `DELETE /auth/huella/:id` | Login | Huellas (passkeys) del usuario |
+| `POST /auth/huella/login/opciones`, `POST /auth/huella/login` | Pública | Entrar con huella |
+| `GET/POST /usuarios`, `PATCH /usuarios/:id`, `PATCH /usuarios/:id/activo` | Gestión | Usuarios de la empresa (admin: todos) |
 | `PATCH /usuarios/:id/clave` | Login | Cambiar clave (propia; admin cualquiera) |
 | `GET /configuracion/publica` | Pública | URL base del QR y si el registro está abierto |
 | `GET/PATCH /configuracion` | Admin | Comisión por defecto, OCPP, RFID, simulación |
-| `GET /operadores`, `GET/PATCH /operadores/:id` | Login | `comision_pactada` solo la cambia un admin |
+| `GET /operadores`, `GET /operadores/:id` | Login | Empresas |
+| `PATCH /operadores/:id` | Gestión | `comision_pactada` solo la cambia un admin; `puntos` = programa de puntos |
 | `POST /operadores` | Admin | |
-| `GET/POST /cargadores`, `PATCH/DELETE /cargadores/:numero_serie` | Login | |
+| `GET /zonas` · `POST/PATCH/DELETE /zonas/:id` | Login · Admin | Zonas |
+| `GET /electrolineras[/:id]` · `POST/PATCH/DELETE` | Login · Gestión | Sitios con latitud/longitud |
+| `GET /monitor` | Login | Tablero en vivo (estado de conectores y sesiones activas) |
+| `GET /mapa` | Pública | Electrolineras con la disponibilidad de cada cargador (app del conductor) |
+| `GET/POST /cargadores`, `PATCH/DELETE /cargadores/:numero_serie` | Login | `electrolinera_id`, `version_ocpp`, `potencia_kw` |
 | `GET /cargadores/:numero_serie` | Pública | App de usuario (incluye `operador_nombre`) |
 | `GET /sesiones`, `GET /estadisticas?dias=14` | Login | Listado y datos del dashboard |
-| `GET /sesiones/:id`, `POST /sesiones`, `POST /sesiones/:id/finalizar`, `POST /sesiones/:id/pagar` | Pública | App de usuario (el UUID no es adivinable) |
+| `GET /sesiones/:id`, `POST /sesiones`, `POST /sesiones/:id/finalizar`, `POST /sesiones/:id/pagar` | Pública | App de usuario (el UUID no es adivinable). Con token de conductor: la carga queda en su cuenta y `pagar {usar_puntos}` redime |
+| `POST /conductor/registro`, `POST /conductor/login` | Pública | Cuenta del conductor (devuelve su token) |
+| `GET /conductor/yo`, `/conductor/cargas`, `/conductor/puntos` | Conductor | Perfil, historial y puntos |
+| `GET /conductor/programa/:numero_serie` | Pública | Programa de puntos del cargador (+ saldo si hay token) |
+| `GET /licencias` · `POST /licencias` · `DELETE /licencias/:id` | Login · Gestión · Admin | Resumen, activar y quitar licencias |
 | `POST /facturacion/cobrar` | Login | Simulador de cobro |
 | `GET /proformas?estado=&q=`, `GET /proformas/:id`, `POST /proformas` | Login | Listado, detalle y emisión desde una sesión |
 | `POST /proformas/:id/anular` | Admin | Anular con motivo (el número no se reutiliza) |
 | `GET /proformas/verificar/:codigo` | Pública | Documento por código de verificación (QR) |
 | `GET /ocpp/conexiones` | Login | Cargadores conectados por WebSocket |
-| `GET /ocpp/catalogo`, `GET /ocpp/mensajes`, `POST /ocpp/:numero_serie/comandos` | Admin | Consola OCPP |
-| `WS /ocpp/:numero_serie` | Cargador | Gateway OCPP 1.6J (subprotocolo `ocpp1.6`) |
+| `GET /ocpp/catalogo?version=`, `GET /ocpp/mensajes`, `POST /ocpp/:numero_serie/comandos` | Admin | Consola OCPP (catálogo según la versión del cargador) |
+| `WS /ocpp/:numero_serie` | Cargador | Gateway OCPP (subprotocolo `ocpp1.6` u `ocpp2.0.1`) |
 
-## Gateway OCPP 1.6J
+## Gateway OCPP (1.6J y 2.0.1)
 
 - `ocpp-gateway.service.ts`: servidor WebSocket en el mismo puerto de la API. Rechaza
   (404) números de serie no registrados salvo que Configuración lo permita.
+- **Versión**: cada cargador tiene `version_ocpp` = `auto` (por defecto: se negocia por el
+  subprotocolo WebSocket que ofrezca el equipo, prefiriendo 2.0.1), `1.6` o `2.0.1` (fija: si el
+  equipo no la ofrece, se rechaza el handshake). El MDXDC3001 habla 1.6J.
+- En 2.0.1 se atiende `BootNotification`, `Heartbeat`, `StatusNotification` (`connectorStatus`,
+  se traduce al vocabulario 1.6 con `STATUS_201`), `Authorize` (`idToken`), `TransactionEvent`
+  (Started/Updated/Ended; `transactionId` es texto) y `MeterValues` (`unitOfMeasure.multiplier`).
+  Inicio/fin remotos con `RequestStart/StopTransaction` vía `iniciarRemoto`/`detenerRemoto`, que
+  eligen el mensaje según la versión. Catálogos de la consola: `CATALOGO_16` y `CATALOGO_201`.
+- El % de batería (`SoC`) que informe el cargador va a `soc_pct` y la app lo muestra en el anillo.
 - Atiende `BootNotification` (responde la hora: el MDXDC3001 llega con el reloj en el
   año 2000), `Heartbeat`, `StatusNotification` (actualiza el estado del cargador),
   `Authorize`, `StartTransaction`, `MeterValues`, `StopTransaction`, `DataTransfer`.
@@ -129,7 +164,7 @@ Pública = sin login. Admin = solo administradores. El resto exige login (con al
   última lectura; y si "Detener" recibe `Rejected` con el conector libre, se cierra al instante.
   La hora de fin es la del `StopTransaction` (reloj del cargador), no la de llegada del mensaje.
 - Probar sin el equipo: carpeta `simulador/` (ver su README): `npm install` y
-  `npm start -- ws://<servidor>:3000/ocpp/ws <serie>` (teclas `t <tarjeta>`, `s`, `f`, `a`,
+  `npm start -- ws://<servidor>:3000/ocpp/ws <serie> [--ocpp 2.0.1] [--soc 20]` (teclas `t <tarjeta>`, `s`, `f`, `a`,
   `c [seg]` corte de red, `x` reinicio que pierde la transacción, `q`).
   Corre en cualquier equipo con Node 18+, sin instalar el backend.
 
@@ -153,6 +188,51 @@ Pública = sin login. Admin = solo administradores. El resto exige login (con al
   IVA, retenciones, código/descripción del producto, forma de pago, vencimiento, nota al pie.
 - No es factura electrónica DIAN (no hay CUFE ni validación): la nota al pie lo indica.
 
+## Electrolineras, mapa y monitor
+
+- Una electrolinera es un sitio (`nombre`, `direccion`, `ciudad`, `latitud`, `longitud`, `horario`,
+  `zona_id`) con varios cargadores (`cargador.electrolinera_id`). Se ubica en el panel con un mapa
+  (clic o arrastrar el pin), búsqueda de direcciones (Nominatim) o la ubicación del navegador.
+- Mapas con Leaflet + react-leaflet y teselas de CARTO (sin llave de API). Usar siempre
+  `components/Mapa` (carga dinámica, `ssr: false`), nunca `MapaBase` directo.
+- **Monitor** (`/monitor`): pantalla completa que se abre en otra pestaña; estado de cada conector
+  (disponible, cargando, falla, sin conexión), sesión activa, kW y kWh, refresco automático.
+
+## Huella (WebAuthn / passkeys)
+
+- `huella.service.ts` con `@simplewebauthn/server`; credenciales en `data/credenciales-huella.json`.
+  Cada usuario registra su huella o rostro del celular/PC en **Mi cuenta** y luego usa
+  "Entrar con huella" en el login. La huella no sale del dispositivo: se guarda una llave pública.
+- El `rpID` sale del `Origin` de la petición: la credencial queda atada al dominio con que se
+  registró. **Exige HTTPS** (o `localhost`): con `http://<IP>` el navegador no ofrece la huella y
+  el login lo explica. Para producción: dominio con TLS (pendiente junto con `wss://`).
+
+## Licencias de activación
+
+- Por empresa (NIT) con límite de cargadores y vencimiento, firmadas con Ed25519 por IIT
+  (`herramientas/licencias/`, ver su README). El servidor solo tiene la llave pública
+  (`backend/licencia-publica.pem` o `LICENCIA_CLAVE_PUBLICA`); **sin ella el licenciamiento está
+  desactivado** y el panel lo avisa. La llave privada nunca va al repositorio.
+- `licencias.service.ts` registra validadores en `CargadoresService` (alta), `OcppGatewayService`
+  (`BootNotification` → `Rejected`) y `SesionesService` (inicio). Estados: `sin_control`,
+  `sin_licencia`, `vigente`, `por_vencer` (30 días), `en_gracia` (7 días), `vencida`. Si hay más
+  cargadores que el límite, quedan fuera los últimos registrados.
+
+## App del conductor y puntos
+
+- `/app`: mapa de electrolineras (`GET /mapa`) con disponibilidad, lista por distancia, filtros
+  "Con cargador libre" y "Mis cargadores" (donde ya cargó), enlace "Cómo llegar" (Google Maps).
+  `/app/entrar` (login/registro), `/app/cuenta` (saldo, ahorro, movimientos, historial).
+- Cuentas en `data/conductores.json` (`ConductoresService`, clave con scrypt). Si el conductor
+  inicia una carga con su cuenta abierta, la sesión guarda `conductor_id` y su correo como contacto.
+- **Puntos** (`PuntosService`, libro `data/puntos.json`, implementa `ProgramaIncentivos` de
+  `SesionesService`). Cada empresa define `puntos: {activo, puntos_por_kwh, valor_punto_cop,
+  minimo_canje}` (por defecto 1 pt/kWh, $50 por punto, mínimo 20). Se acumulan al pagar
+  (`floor(kWh × puntos_por_kwh)`) y **solo se redimen en cargadores de la empresa que los dio**.
+  Al pagar con `usar_puntos` se usan los puntos necesarios sin pasar del total; el cobro (y la base
+  de la comisión) es `costo_total − descuento`; si el cobro falla, los puntos se devuelven
+  (`reverso`). La proforma muestra el descuento (desagregando el IVA).
+
 ## Estado actual
 
 - **Persistencia temporal en JSON**: cada servicio guarda su colección con `AlmacenService`
@@ -166,9 +246,10 @@ Pública = sin login. Admin = solo administradores. El resto exige login (con al
   integrar Wompi.
 - Al registrar un cargador queda `activo`; si se conecta por OCPP, `StatusNotification` lo
   mantiene al día (`Faulted` → `en_falla`, `Unavailable` → `inactivo`).
-- Pendientes: PostgreSQL (en la misma VM Windows), Wompi (cobro + dispersión), probar el
-  gateway con el MDXDC3001 real, `wss://` (TLS) para producción, envío de la proforma por
-  correo, factura electrónica DIAN a través de un proveedor tecnológico.
+- Pendientes: PostgreSQL, Wompi (cobro + dispersión), probar el gateway con el MDXDC3001 real,
+  dominio con TLS (`https://` para la huella y `wss://` para los cargadores), publicar la llave
+  pública de licencias, envío de la proforma por correo, factura electrónica DIAN a través de un
+  proveedor tecnológico, probar OCPP 2.0.1 con un equipo real.
 
 ---
 

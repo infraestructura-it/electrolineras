@@ -36,7 +36,11 @@ export class OperadoresController {
   actualizar(
     @Param('id') id: string,
     @Body()
-    body: { nombre?: string; nit?: string; email_contacto?: string; cuenta_beneficiario?: string; comision_pactada?: number | null },
+    body: {
+      puntos?: { activo?: boolean; puntos_por_kwh?: number; valor_punto_cop?: number; minimo_canje?: number };
+      nombre?: string;
+      nit?: string;
+      email_contacto?: string; cuenta_beneficiario?: string; comision_pactada?: number | null },
     @Usuario() usuario: UsuarioActual,
   ) {
     return this.operadoresService.actualizar(id, body, alcanceOperador(usuario));

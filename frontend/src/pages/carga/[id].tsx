@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { cargadoresApi, sesionesApi, SesionCarga, formatoCOP, formatoKwh, formatoFecha } from '@/lib/api';
+import { Gift } from 'lucide-react';
+import { cargadoresApi, conductorApi, sesionesApi, ProgramaCargador, SesionCarga, formatoCOP, formatoKwh, formatoFecha } from '@/lib/api';
 
 const INTERVALO_MS = 3000;
 const POTENCIA_NOMINAL_KW = 30; // MDXDC3001, si no se conoce la del cargador
@@ -60,7 +61,22 @@ export default function CargaEnCurso() {
   const [error, setError] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [nominalKw, setNominalKw] = useState(POTENCIA_NOMINAL_KW);
+  const [programa, setPrograma] = useState<ProgramaCargador | null>(null);
+  const [usarPuntos, setUsarPuntos] = useState(false);
   const serieSesion = sesion?.numero_serie;
+
+  // Puntos del conductor en esta empresa, para ofrecer el descuento al pagar.
+  const porPagar = !!sesion && sesion.estado === 'finalizada' && !sesion.pago && !!sesion.conductor_id;
+  useEffect(() => {
+    if (!porPagar || !serieSesion || !conductorApi.hayCuenta()) return;
+    conductorApi
+      .programa(serieSesion)
+      .then((p) => {
+        setPrograma(p);
+        setUsarPuntos(p.puede_redimir);
+      })
+      .catch(() => setPrograma(null));
+  }, [porPagar, serieSesion]);
 
   useEffect(() => {
     if (!serieSesion) return;
@@ -112,7 +128,7 @@ export default function CargaEnCurso() {
     if (!sesion) return;
     setOcupado(true);
     try {
-      setSesion(await sesionesApi.pagar(sesion.id));
+      setSesion(await sesionesApi.pagar(sesion.id, usarPuntos && !!programa?.puede_redimir));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -224,11 +240,17 @@ export default function CargaEnCurso() {
 
   // ---------- Finalizada: resumen, pago y recibo ----------
   const total = sesion.costo_total ?? 0;
+  // Descuento estimado (el backend calcula el definitivo): solo los puntos necesarios, sin pasar del total.
+  const puntosAUsar =
+    programa?.puede_redimir && programa.valor_punto_cop > 0 ? Math.min(programa.saldo, Math.floor(total / programa.valor_punto_cop)) : 0;
+  const descuentoEstimado = usarPuntos ? puntosAUsar * (programa?.valor_punto_cop ?? 0) : 0;
+  const descuento = sesion.descuento_puntos?.valor ?? 0;
+  const aPagar = sesion.pago ? sesion.pago.monto_total : total - descuentoEstimado;
   return (
     <>
       <section className="app-panel">
         <div className="app-etiqueta">{sesion.pago ? 'Recibo' : 'Carga finalizada'}</div>
-        <div className="app-cifra">{formatoCOP(total)}</div>
+        <div className="app-cifra">{formatoCOP(sesion.pago ? sesion.pago.monto_total : total)}</div>
 
         <dl className="app-recibo">
           <div>
@@ -255,6 +277,26 @@ export default function CargaEnCurso() {
             <dt>Recibo para</dt>
             <dd>{sesion.usuario_id}</dd>
           </div>
+          {descuento > 0 && (
+            <div>
+              <dt>Valor de la carga</dt>
+              <dd>{formatoCOP(total)}</dd>
+            </div>
+          )}
+          {descuento > 0 && (
+            <div>
+              <dt>Descuento con puntos</dt>
+              <dd>
+                −{formatoCOP(descuento)} ({sesion.descuento_puntos?.puntos} pts)
+              </dd>
+            </div>
+          )}
+          {!!sesion.puntos_ganados && (
+            <div>
+              <dt>Puntos ganados</dt>
+              <dd className="texto-voltaje">+{sesion.puntos_ganados}</dd>
+            </div>
+          )}
           {sesion.pago && (
             <div>
               <dt>Pago</dt>
@@ -268,9 +310,34 @@ export default function CargaEnCurso() {
         </dl>
       </section>
 
+      {!sesion.pago && programa?.activo && (
+        <section className="app-panel app-puntos">
+          <Gift size={20} aria-hidden="true" />
+          <div>
+            {programa.puede_redimir && puntosAUsar > 0 ? (
+              <label className="app-check">
+                <input type="checkbox" checked={usarPuntos} onChange={(e) => setUsarPuntos(e.target.checked)} />
+                Usar {puntosAUsar} de mis {programa.saldo} puntos (−{formatoCOP(puntosAUsar * programa.valor_punto_cop)})
+              </label>
+            ) : (
+              <span>
+                Tienes {programa.saldo} puntos aquí; se redimen desde {programa.minimo_canje}.
+              </span>
+            )}
+            <span>Con esta carga ganas {Math.floor(sesion.kwh_consumidos * programa.puntos_por_kwh)} puntos.</span>
+          </div>
+        </section>
+      )}
+
+      {!sesion.pago && !sesion.conductor_id && (
+        <p className="app-nota">
+          <Link href="/app/entrar">Crea tu cuenta</Link> para acumular puntos en tus próximas cargas.
+        </p>
+      )}
+
       {!sesion.pago ? (
         <button className="btn app-boton" onClick={pagar} disabled={ocupado}>
-          {ocupado ? 'Procesando…' : `Pagar ${formatoCOP(total)}`}
+          {ocupado ? 'Procesando…' : Math.round(aPagar) <= 0 ? 'Pagar con mis puntos' : `Pagar ${formatoCOP(aPagar)}`}
         </button>
       ) : (
         sesion.pago.estado_pago === 'pendiente' && (

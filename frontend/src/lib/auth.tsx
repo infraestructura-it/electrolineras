@@ -1,6 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { authApi, guardarToken, leerToken, Rol, Usuario } from './api';
+import { startAuthentication } from '@simplewebauthn/browser';
+import { authApi, guardarToken, huellaApi, leerToken, Rol, Usuario } from './api';
 
 interface ContextoAuth {
   usuario: Usuario | null;
@@ -9,6 +10,7 @@ interface ContextoAuth {
   puedeGestionar: boolean; // admin de plataforma o administrador de empresa (crear y editar)
   tieneRol: (...roles: Rol[]) => boolean;
   entrar: (email: string, password: string) => Promise<void>;
+  entrarConHuella: () => Promise<void>;
   registrarse: (data: { empresa: string; nombre: string; email: string; password: string }) => Promise<void>;
   salir: () => void;
 }
@@ -57,6 +59,16 @@ export function ProveedorAuth({ children }: { children: ReactNode }) {
     setUsuario(usuario);
   }, []);
 
+  // Huella: el dispositivo muestra sus passkeys para este dominio y pide la huella/rostro/PIN.
+  const entrarConHuella = useCallback(async () => {
+    const opciones = await huellaApi.opcionesLogin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const respuesta = await startAuthentication({ optionsJSON: opciones as any });
+    const { token, usuario } = await huellaApi.login(respuesta);
+    guardarToken(token);
+    setUsuario(usuario);
+  }, []);
+
   const registrarse = useCallback(async (data: { empresa: string; nombre: string; email: string; password: string }) => {
     const { token, usuario } = await authApi.registro(data);
     guardarToken(token);
@@ -72,6 +84,7 @@ export function ProveedorAuth({ children }: { children: ReactNode }) {
         puedeGestionar: usuario?.rol === 'admin' || usuario?.rol === 'administrador',
         tieneRol: (...roles: Rol[]) => Boolean(usuario && roles.includes(usuario.rol)),
         entrar,
+        entrarConHuella,
         registrarse,
         salir,
       }}

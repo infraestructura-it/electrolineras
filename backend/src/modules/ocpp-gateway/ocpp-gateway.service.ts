@@ -146,6 +146,8 @@ export class OcppGatewayService implements OnModuleDestroy {
   private ultimoTransactionId: number;
   private remoteStartId = Math.floor(Date.now() / 1000) % 1_000_000;
   private manejador: ManejadorTransacciones | null = null;
+  // Reglas externas para aceptar el arranque de un cargador (licencias): devuelven el motivo del rechazo.
+  private validadoresArranque: ((numero_serie: string) => string | null)[] = [];
   private wss: WebSocketServer | null = null;
 
   constructor(
@@ -158,6 +160,24 @@ export class OcppGatewayService implements OnModuleDestroy {
 
   registrarManejador(manejador: ManejadorTransacciones) {
     this.manejador = manejador;
+  }
+
+  registrarValidadorArranque(fn: (numero_serie: string) => string | null) {
+    this.validadoresArranque.push(fn);
+  }
+
+  // BootNotification: registrado (o se aceptan desconocidos) y sin bloqueo de licencia.
+  private aceptarArranque(conexion: Conexion) {
+    const serie = conexion.numero_serie;
+    if (!this.cargadores.existe(serie) && !this.configuracion.obtener().aceptar_cargadores_desconocidos) return false;
+    for (const validar of this.validadoresArranque) {
+      const motivo = validar(serie);
+      if (motivo) {
+        this.anotar(serie, 'sistema', 'EVENTO', 'ArranqueRechazado', null, { motivo });
+        return false;
+      }
+    }
+    return true;
   }
 
   // Se engancha al servidor HTTP de Nest (mismo puerto que la API) desde main.ts.
@@ -457,7 +477,7 @@ export class OcppGatewayService implements OnModuleDestroy {
         exigirTexto('chargePointModel');
         conexion.boot = p;
         const config = this.configuracion.obtener();
-        conexion.boot_aceptado = this.cargadores.existe(serie) || config.aceptar_cargadores_desconocidos;
+        conexion.boot_aceptado = this.aceptarArranque(conexion);
         return {
           status: conexion.boot_aceptado ? 'Accepted' : 'Rejected',
           currentTime: ahora, // sincroniza el reloj del cargador (el MDXDC3001 venía en el año 2000)
@@ -574,7 +594,7 @@ export class OcppGatewayService implements OnModuleDestroy {
         texto(estacion, 'vendorName', 'chargingStation.vendorName');
         conexion.boot = p;
         const config = this.configuracion.obtener();
-        conexion.boot_aceptado = this.cargadores.existe(serie) || config.aceptar_cargadores_desconocidos;
+        conexion.boot_aceptado = this.aceptarArranque(conexion);
         return { currentTime: ahora, interval: config.intervalo_heartbeat_s, status: conexion.boot_aceptado ? 'Accepted' : 'Rejected' };
       }
 

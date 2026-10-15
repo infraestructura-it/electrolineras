@@ -10,6 +10,8 @@ import { OcppGatewayModule } from './modules/ocpp-gateway/ocpp-gateway.module';
 import { ProformasModule } from './modules/proformas/proformas.module';
 import { ZonasModule } from './modules/zonas/zonas.module';
 import { MonitorModule } from './modules/monitor/monitor.module';
+import { LicenciasModule } from './modules/licencias/licencias.module';
+import { ConductoresModule } from './modules/conductores/conductores.module';
 
 @Module({
   imports: [
@@ -24,6 +26,8 @@ import { MonitorModule } from './modules/monitor/monitor.module';
     ProformasModule,
     ZonasModule,
     MonitorModule,
+    LicenciasModule,
+    ConductoresModule,
   ],
 })
 export class AppModule {}

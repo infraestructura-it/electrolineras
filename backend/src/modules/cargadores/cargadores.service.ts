@@ -49,6 +49,7 @@ const SERIE_VALIDA = /^[A-Za-z0-9._-]{1,48}$/; // va en la URL OCPP y en la del 
 @Injectable()
 export class CargadoresService {
   private readonly cargadores = new Map<string, CargadorRegistro>(); // clave: numero_serie
+  private validadoresAlta: ((operador_id: string) => void)[] = [];
 
   constructor(
     private readonly almacen: AlmacenService,
@@ -76,6 +77,11 @@ export class CargadoresService {
         (!alcance || c.operador_id === alcance) &&
         (!zona || this.electrolineras.buscar(c.electrolinera_id)?.zona_id === zona),
     );
+  }
+
+  // Reglas externas para registrar un cargador (licencias): lanzan una excepción si no se puede.
+  registrarValidadorAlta(fn: (operador_id: string) => void) {
+    this.validadoresAlta.push(fn);
   }
 
   // Números de serie visibles para un alcance (null = sin restricción).
@@ -138,6 +144,7 @@ export class CargadoresService {
     if (electrolinera && electrolinera.operador_id !== operador_id) {
       throw new BadRequestException('La electrolinera pertenece a otra empresa');
     }
+    for (const validar of this.validadoresAlta) validar(operador_id);
 
     const cargador: CargadorRegistro = {
       id: randomUUID(),
