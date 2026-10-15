@@ -121,7 +121,8 @@ Pública = sin login. Admin = solo administradores. El resto exige login (con al
   `RemoteStartTransaction`; el `StartTransaction` del cargador la pasa a `en_curso`;
   `MeterValues` actualiza kWh; "Detener" envía `RemoteStopTransaction` (`deteniendo`) y el
   `StopTransaction` la cierra con la lectura final. Una tarjeta RFID autorizada crea su
-  propia sesión (`origen: 'rfid'`).
+  propia sesión (`origen: 'rfid'`). Un `RemoteStartTransaction` enviado desde la consola OCPP
+  deja su `idTag` aceptado 5 minutos para ese cargador y crea una sesión `origen: 'panel'`.
 - Probar sin el equipo: carpeta `simulador/` (ver su README): `npm install` y
   `npm start -- ws://<servidor>:3000/ocpp/ws <serie>` (teclas `t <tarjeta>`, `s`, `f`, `a`, `q`).
   Corre en cualquier equipo con Node 18+, sin instalar el backend.

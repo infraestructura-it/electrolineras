@@ -80,7 +80,7 @@ export default function SesionesPage() {
                   <tr key={s.id}>
                     <td>
                       {formatoFecha(s.inicio)}
-                      <div className="secundario">{s.origen === 'rfid' ? 'Tarjeta RFID' : 'App (QR)'}{s.medicion_simulada ? ', medición simulada' : ''}</div>
+                      <div className="secundario">{s.origen === 'rfid' ? 'Tarjeta RFID' : s.origen === 'panel' ? 'Consola OCPP' : 'App (QR)'}{s.medicion_simulada ? ', medición simulada' : ''}</div>
                     </td>
                     <td className="mono">{s.numero_serie}</td>
                     <td>{s.usuario_id}</td>

@@ -35,8 +35,8 @@ export interface SesionRegistro {
   cargador_id: string;
   numero_serie: string;
   operador_id: string;
-  usuario_id: string; // correo/celular del usuario, o "Tarjeta <idTag>" si inició con RFID
-  origen: 'app' | 'rfid';
+  usuario_id: string; // correo/celular, "Tarjeta <idTag>" (RFID) o "Consola OCPP (<idTag>)"
+  origen: 'app' | 'rfid' | 'panel';
   medicion: 'ocpp' | 'simulada';
   estado: EstadoSesion;
   id_tag: string | null;
@@ -247,7 +247,15 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
     );
   }
 
-  alIniciarTransaccion(d: { numero_serie: string; transactionId: number; connectorId: number; idTag: string; meterStartWh: number; fecha: string }) {
+  alIniciarTransaccion(d: {
+    numero_serie: string;
+    transactionId: number;
+    connectorId: number;
+    idTag: string;
+    meterStartWh: number;
+    fecha: string;
+    origen: 'rfid' | 'panel';
+  }) {
     const pendiente = [...this.sesiones.values()].find(
       (s) => s.numero_serie === d.numero_serie && s.id_tag === d.idTag && s.estado === 'iniciando',
     );
@@ -271,7 +279,7 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
       return;
     }
 
-    // Carga iniciada en el propio cargador con una tarjeta RFID autorizada.
+    // Carga iniciada en el propio cargador con una tarjeta RFID autorizada, o desde la consola OCPP.
     if (!this.cargadoresService.existe(d.numero_serie)) return;
     const cargador = this.cargadoresService.findByNumeroSerie(d.numero_serie);
     const sesion: SesionRegistro = {
@@ -279,8 +287,8 @@ export class SesionesService implements OnModuleInit, ManejadorTransacciones {
       cargador_id: cargador.id,
       numero_serie: cargador.numero_serie,
       operador_id: cargador.operador_id,
-      usuario_id: `Tarjeta ${d.idTag}`,
-      origen: 'rfid',
+      usuario_id: d.origen === 'panel' ? `Consola OCPP (${d.idTag})` : `Tarjeta ${d.idTag}`,
+      origen: d.origen,
       medicion: 'ocpp',
       estado: 'en_curso',
       id_tag: d.idTag,

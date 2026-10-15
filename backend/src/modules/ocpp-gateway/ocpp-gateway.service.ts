@@ -23,6 +23,7 @@ import { CATALOGO_COMANDOS, validarComando } from './ocpp-comandos';
 
 const RUTA_OCPP = '/ocpp';
 const TIEMPO_ESPERA_RESPUESTA_MS = 30_000;
+const VIGENCIA_IDTAG_REMOTO_MS = 5 * 60_000;
 const MAX_MENSAJES_REGISTRO = 1000;
 
 type Direccion = 'entrada' | 'salida' | 'sistema';
@@ -82,7 +83,16 @@ class ErrorOcpp extends Error {
 // Lo implementa SesionesService para enlazar transacciones OCPP con sesiones de carga.
 export interface ManejadorTransacciones {
   autorizarIdTag(numero_serie: string, idTag: string): boolean;
-  alIniciarTransaccion(d: { numero_serie: string; transactionId: number; connectorId: number; idTag: string; meterStartWh: number; fecha: string }): void;
+  alIniciarTransaccion(d: {
+    numero_serie: string;
+    transactionId: number;
+    connectorId: number;
+    idTag: string;
+    meterStartWh: number;
+    fecha: string;
+    // 'panel' si la carga la ordenó un admin con RemoteStartTransaction desde la consola OCPP.
+    origen: 'rfid' | 'panel';
+  }): void;
   alMedir(d: { numero_serie: string; transactionId: number | null; energiaWh: number | null; potenciaKw: number | null }): void;
   alDetenerTransaccion(d: { numero_serie: string; transactionId: number; meterStopWh: number; fecha: string; motivo: string | null }): void;
 }
@@ -97,6 +107,9 @@ export class OcppGatewayService implements OnModuleDestroy {
   private readonly logger = new Logger(OcppGatewayService.name);
   private readonly conexiones = new Map<string, Conexion>();
   private readonly pendientes = new Map<string, LlamadaPendiente>();
+  // idTag enviados desde la consola con RemoteStartTransaction, por cargador. El servidor los
+  // acepta en el Authorize/StartTransaction que sigue (vencen a los 5 minutos).
+  private readonly idTagsRemotos = new Map<string, { idTag: string; vence: number }>();
   private readonly registro: MensajeOcpp[] = [];
   private secuenciaRegistro = 0;
   private ultimoTransactionId: number;
@@ -197,6 +210,11 @@ export class OcppGatewayService implements OnModuleDestroy {
     const conexion = this.conexiones.get(numero_serie);
     if (!conexion || conexion.ws.readyState !== WebSocket.OPEN) {
       throw new ConflictException(`El cargador ${numero_serie} no está conectado por OCPP`);
+    }
+
+    if (accion === 'RemoteStartTransaction') {
+      const idTag = String((payload as { idTag: string }).idTag);
+      this.idTagsRemotos.set(numero_serie, { idTag, vence: Date.now() + VIGENCIA_IDTAG_REMOTO_MS });
     }
 
     const mensaje_id = randomUUID();
@@ -362,7 +380,10 @@ export class OcppGatewayService implements OnModuleDestroy {
           return { transactionId: 0, idTagInfo: { status: 'Invalid' } };
         }
         const transactionId = this.siguienteTransactionId();
+        const desdePanel = this.esIdTagRemoto(serie, idTag);
+        if (desdePanel) this.idTagsRemotos.delete(serie);
         this.manejador?.alIniciarTransaccion({
+          origen: desdePanel ? 'panel' : 'rfid',
           numero_serie: serie,
           transactionId,
           connectorId,
@@ -410,10 +431,25 @@ export class OcppGatewayService implements OnModuleDestroy {
     }
   }
 
-  // Tarjeta RFID autorizada en Configuración, o idTag de una sesión iniciada desde la app.
+  // Tarjeta RFID autorizada en Configuración, idTag de una sesión iniciada desde la app, o idTag
+  // que el propio servidor envió con RemoteStartTransaction desde la consola OCPP.
   private autorizar(serie: string, idTag: string) {
     const tarjetas = this.configuracion.obtener().tarjetas_rfid_autorizadas;
-    return tarjetas.includes(idTag.toUpperCase()) || Boolean(this.manejador?.autorizarIdTag(serie, idTag));
+    return (
+      tarjetas.includes(idTag.toUpperCase()) ||
+      this.esIdTagRemoto(serie, idTag) ||
+      Boolean(this.manejador?.autorizarIdTag(serie, idTag))
+    );
+  }
+
+  private esIdTagRemoto(serie: string, idTag: string) {
+    const remoto = this.idTagsRemotos.get(serie);
+    if (!remoto) return false;
+    if (remoto.vence < Date.now()) {
+      this.idTagsRemotos.delete(serie);
+      return false;
+    }
+    return remoto.idTag === idTag;
   }
 
   // Energy.Active.Import.Register (Wh o kWh) y Power.Active.Import (W o kW) del último sampledValue.

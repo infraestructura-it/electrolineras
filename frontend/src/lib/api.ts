@@ -119,7 +119,7 @@ export interface SesionCarga {
   numero_serie: string;
   operador_id: string;
   usuario_id: string;
-  origen: 'app' | 'rfid';
+  origen: 'app' | 'rfid' | 'panel';
   medicion: 'ocpp' | 'simulada';
   estado: EstadoSesion;
   transaction_id: number | null;
