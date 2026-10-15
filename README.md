@@ -10,6 +10,7 @@ automáticamente a los usuarios finales, con reparto de comisión hacia la plata
 electrolineras/
 ├── backend/     # API NestJS: operadores, cargadores, sesiones, facturación, gateway OCPP
 ├── frontend/    # Next.js 14: panel de operador + app de usuario final (QR → carga → pago)
+├── simulador/   # Simulador OCPP del cargador para pruebas (npm install && npm start -- <url> <serie>)
 ├── docs/        # Especificación técnica y modelo de datos
 └── scripts/windows/  # Scripts de despliegue para Windows Server (PM2, firewall, arranque)
 ```

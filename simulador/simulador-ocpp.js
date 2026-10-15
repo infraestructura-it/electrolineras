@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Simulador de un cargador MDXDC3001 (OCPP 1.6J) para probar el gateway sin el equipo físico.
 //
-// Uso (desde backend/):
-//   node scripts/simulador-ocpp.js <url> <numero_serie> [--potencia 30] [--intervalo 5]
-//   node scripts/simulador-ocpp.js ws://localhost:3000/ocpp MDX20260715001
+// Uso (desde la carpeta simulador/, después de "npm install"):
+//   npm start -- <url> <numero_serie> [--potencia 30] [--intervalo 5]
+//   npm start -- ws://192.168.2.47:3000/ocpp/ws 2222233333
+// o directamente: node simulador-ocpp.js <url> <numero_serie>
 //
 // Comandos por teclado mientras corre:
 //   t <idTag>   pasar una tarjeta RFID (Authorize + StartTransaction)
@@ -23,7 +24,7 @@ const opcion = (nombre, defecto) => {
 };
 const [urlBase, serie] = args.filter((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--')));
 if (!urlBase || !serie) {
-  console.error('Uso: node scripts/simulador-ocpp.js <url> <numero_serie> [--potencia 30] [--intervalo 5]');
+  console.error('Uso: npm start -- <url> <numero_serie> [--potencia 30] [--intervalo 5]\n  Ej.: npm start -- ws://192.168.2.47:3000/ocpp/ws 2222233333');
   process.exit(1);
 }
 const POTENCIA_KW = opcion('potencia', 30);

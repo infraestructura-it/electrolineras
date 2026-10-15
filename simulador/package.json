@@ -1,0 +1,16 @@
+{
+  "name": "electrolineras-simulador-ocpp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Simulador de un cargador MDXDC3001 (OCPP 1.6J) para probar la plataforma Electrolineras sin el equipo",
+  "main": "simulador-ocpp.js",
+  "scripts": {
+    "start": "node simulador-ocpp.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}

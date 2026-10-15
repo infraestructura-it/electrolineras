@@ -19,7 +19,6 @@ electrolineras/
 │   ├── src/comun/           # AlmacenService (persistencia JSON), decoradores @Publico/@Roles/@Usuario
 │   ├── src/modules/         # auth, usuarios, configuracion, operadores, cargadores, sesiones,
 │   │                        # facturacion, proformas, ocpp-gateway
-│   ├── scripts/simulador-ocpp.js  # simulador del MDXDC3001 para probar sin el equipo
 │   └── .env.example         # ADMIN_EMAIL, ADMIN_PASSWORD, JWT_SECRET, DATA_DIR, PORT
 ├── frontend/                # Next.js 14 (pages router) — puerto 3001 en producción
 │   ├── src/lib/api.ts       # cliente único de API: toda llamada al backend pasa por aquí
@@ -32,6 +31,7 @@ electrolineras/
 │   ├── src/pages/login.tsx, registro.tsx
 │   └── src/pages/*/         # panel: inicio, cargadores, sesiones, operadores, proformas,
 │                            # facturacion, ocpp (consola), usuarios, configuracion
+├── simulador/               # simulador OCPP del MDXDC3001, independiente (solo depende de ws)
 ├── docs/                    # especificación técnica y modelo de datos
 ├── scripts/proxmox/         # crear-lxc.sh (contenedor Ubuntu 24.04) y migrar-datos.sh
 ├── scripts/linux/           # instalar.sh y actualizar.sh (Ubuntu 24.04, PM2 + systemd)
@@ -122,8 +122,9 @@ Pública = sin login. Admin = solo administradores. El resto exige login (con al
   `MeterValues` actualiza kWh; "Detener" envía `RemoteStopTransaction` (`deteniendo`) y el
   `StopTransaction` la cierra con la lectura final. Una tarjeta RFID autorizada crea su
   propia sesión (`origen: 'rfid'`).
-- Probar sin el equipo: `node scripts/simulador-ocpp.js ws://localhost:3000/ocpp <serie>`
-  (desde `backend/`; teclas `t <tarjeta>`, `s`, `f`, `a`, `q`).
+- Probar sin el equipo: carpeta `simulador/` (ver su README): `npm install` y
+  `npm start -- ws://<servidor>:3000/ocpp/ws <serie>` (teclas `t <tarjeta>`, `s`, `f`, `a`, `q`).
+  Corre en cualquier equipo con Node 18+, sin instalar el backend.
 
 ## Proformas (prefacturas)
 
@@ -211,7 +212,7 @@ Para restablecerla: pon `ADMIN_PASSWORD` en `backend\.env` y `pm2 restart electr
 **Conectar el MDXDC3001**: en Basic Settings, `domain_master = ws://<IP-del-servidor>:3000/ocpp`
 y `pile_number_master = <numero_serie registrado>`; Save y About → System reset. El puerto
 3000 ya está abierto por `abrir-puertos.ps1`. Probar antes con el simulador:
-`node backend\scripts\simulador-ocpp.js ws://localhost:3000/ocpp <numero_serie>`.
+`cd simulador; npm install; npm start -- ws://localhost:3000/ocpp/ws <numero_serie>`.
 
 ### Comandos útiles
 
