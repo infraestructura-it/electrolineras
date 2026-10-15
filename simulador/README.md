@@ -15,6 +15,9 @@ npm install
 npm start -- ws://192.168.2.47:3000/ocpp/ws 2222233333
 ```
 
+También funciona desde la raíz del repo (`C:\pruebas\electrolineras`): `npm start -- <url> <serie>` instala
+lo necesario y corre el simulador.
+
 En Linux es igual (`mkdir ~/pruebas && cd ~/pruebas`, etc.).
 
 - La URL es la misma que va en `domain_master` del cargador; el simulador le agrega el número de

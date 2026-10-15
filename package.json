@@ -1,0 +1,9 @@
+{
+  "name": "electrolineras",
+  "private": true,
+  "description": "Atajos desde la raíz del repo. El backend y el frontend se instalan en sus carpetas.",
+  "scripts": {
+    "start": "npm --prefix simulador install --no-audit --no-fund --silent && node simulador/simulador-ocpp.js",
+    "simulador": "npm --prefix simulador install --no-audit --no-fund --silent && node simulador/simulador-ocpp.js"
+  }
+}

@@ -32,6 +32,7 @@ electrolineras/
 │   └── src/pages/*/         # panel: inicio, cargadores, sesiones, operadores, proformas,
 │                            # facturacion, ocpp (consola), usuarios, configuracion
 ├── simulador/               # simulador OCPP del MDXDC3001, independiente (solo depende de ws)
+├── package.json             # atajo: `npm start -- <url> <serie>` en la raíz corre el simulador
 ├── docs/                    # especificación técnica y modelo de datos
 ├── scripts/proxmox/         # crear-lxc.sh (contenedor Ubuntu 24.04) y migrar-datos.sh
 ├── scripts/linux/           # instalar.sh y actualizar.sh (Ubuntu 24.04, PM2 + systemd)
@@ -246,7 +247,7 @@ pm2 restart electrolineras
 | No sé la clave del admin | Se generó al primer arranque | `pm2 logs electrolineras --lines 80 --nostream`, o `ADMIN_PASSWORD` en `backend\.env` |
 | El cargador no conecta (404) | Su número de serie no está registrado | Registrarlo en Cargadores con el mismo `pile_number_master` |
 | `actualizar.ps1` falla en PM2 con `ConvertFrom-Json ... 'username' y 'USERNAME' duplicadas` | La versión anterior leía `pm2 jlist` y el entorno de Windows repite claves | Ya resuelto: el script usa `pm2 startOrReload`. Si quedó a medias: `pm2 startOrReload ecosystem.config.js --update-env; pm2 save` |
-| `npm start` del simulador: `Could not read package.json` | Se corrió en la raíz del repo | Entrar a la carpeta: `cd simulador` |
+| `npm start` del simulador: `Could not read package.json` | Se corrió en la raíz con una versión anterior del repo | `git pull`: ahora `npm start -- <url> <serie>` funciona también desde la raíz (instala y corre `simulador/`) |
 | Al pegar varios comandos se juntan líneas | El último renglón pegado queda sin Enter | Pegar de a un comando, o unirlos con `;` |
 
 ---
