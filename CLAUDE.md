@@ -240,6 +240,8 @@ pm2 restart electrolineras
 | Errores de CORS en el navegador | Backend sin `enableCors()` | Ya resuelto en `backend/src/main.ts` |
 | No sé la clave del admin | Se generó al primer arranque | `pm2 logs electrolineras --lines 80 --nostream`, o `ADMIN_PASSWORD` en `backend\.env` |
 | El cargador no conecta (404) | Su número de serie no está registrado | Registrarlo en Cargadores con el mismo `pile_number_master` |
+| `actualizar.ps1` falla en PM2 con `ConvertFrom-Json ... 'username' y 'USERNAME' duplicadas` | La versión anterior leía `pm2 jlist` y el entorno de Windows repite claves | Ya resuelto: el script usa `pm2 startOrReload`. Si quedó a medias: `pm2 startOrReload ecosystem.config.js --update-env; pm2 save` |
+| `npm start` del simulador: `Could not read package.json` | Se corrió en la raíz del repo | Entrar a la carpeta: `cd simulador` |
 | Al pegar varios comandos se juntan líneas | El último renglón pegado queda sin Enter | Pegar de a un comando, o unirlos con `;` |
 
 ---
