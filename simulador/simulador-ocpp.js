@@ -189,11 +189,37 @@ async function boot() {
   await enviarEstado(disponible ? 'Available' : 'Unavailable');
 }
 
+let ultimoRechazo = null;
+let reintentoMs = 3000;
+
+function explicarRechazo(estado) {
+  if (estado === ultimoRechazo) return; // explicar una sola vez, no en cada reintento
+  ultimoRechazo = estado;
+  if (estado === 404) {
+    log(`✗ El servidor respondió 404. Revisa:
+    1. Que el número de serie "${serie}" esté registrado en el panel (Cargadores), escrito igual.
+    2. Que el backend del servidor esté actualizado y con el gateway OCPP: en la Consola OCPP debe
+       aparecer "ConexionRechazada" por cada intento; si no aparece nada, actualiza y reinicia el backend.
+    3. Que la URL apunte al puerto de la API (3000), no al del panel (3001).`);
+  } else {
+    log(`✗ El servidor rechazó la conexión con HTTP ${estado}.`);
+  }
+}
+
 function conectar() {
   const url = `${urlBase.replace(/\/+$/, '')}/${encodeURIComponent(serie)}`;
   log('Conectando a', url);
   ws = new WebSocket(url, ['ocpp1.6']);
-  ws.on('open', boot);
+  ws.on('open', () => {
+    ultimoRechazo = null;
+    reintentoMs = 3000;
+    boot();
+  });
+  ws.on('unexpected-response', (_req, res) => {
+    explicarRechazo(res.statusCode);
+    reintentoMs = 15000; // rechazado: reintentar más despacio
+    ws.terminate();
+  });
   ws.on('message', (texto) => {
     const m = JSON.parse(texto.toString());
     if (m[0] === 2) return atender(m[1], m[2], m[3]);
@@ -206,10 +232,12 @@ function conectar() {
     clearInterval(temporizadorHeartbeat);
     clearInterval(temporizadorMedicion);
     transaccion = null;
-    log(`Conexión cerrada (${codigo}). Reintentando en 3 s…`);
-    setTimeout(conectar, 3000);
+    log(`Conexión cerrada (${codigo}). Reintentando en ${reintentoMs / 1000} s…`);
+    setTimeout(conectar, reintentoMs);
   });
-  ws.on('error', (e) => log('Error:', e.message));
+  ws.on('error', (e) => {
+    if (!ultimoRechazo) log('Error:', e.message);
+  });
 }
 
 readline.createInterface({ input: process.stdin }).on('line', (linea) => {
