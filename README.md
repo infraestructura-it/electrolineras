@@ -53,7 +53,7 @@ Ordenado por prioridad para salir a operación comercial.
 |---|---|---|---|
 | 1 | **Probar con el MDXDC3001 real** | Todo el flujo OCPP está validado solo con el simulador | Pendiente: falta la conexión de red del equipo |
 | 2 | **Pasarela de pagos** (cobro real + dispersión a cada empresa) | Hoy el pago queda `pendiente`: no entra dinero | Pendiente: elegir pasarela (ver propuesta abajo) |
-| 3 | **Dominio con HTTPS y `wss://`** | Seguridad de pagos y datos; la huella lo exige; los cargadores conectan cifrado | Pendiente: certificado para `cargador.infraestructura-it.com` |
+| 3 | **Dominio con HTTPS y `wss://`** | Seguridad de pagos y datos; la huella lo exige; los cargadores conectan cifrado | En curso: `scripts/windows/instalar-caddy.ps1` (Caddy + Let's Encrypt) |
 | 4 | **Base de datos PostgreSQL** | Hoy son archivos JSON: sirve para pruebas, no para muchas empresas | Pendiente: las entidades TypeORM ya existen |
 | 5 | **Respaldos automáticos** | Proteger sesiones, pagos y proformas | Pendiente |
 | 6 | **Factura electrónica DIAN** (proveedor tecnológico) | Obligatoria para facturar; la proforma no la reemplaza | Pendiente |

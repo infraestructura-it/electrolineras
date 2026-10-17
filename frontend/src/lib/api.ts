@@ -1,7 +1,16 @@
 // Cliente central de API — todas las llamadas al backend de Electrolineras pasan por aquí.
 // Cada función corresponde a un endpoint real de backend/src/modules/*.
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+const API_ENV = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
+// Dirección de la API según cómo se abrió la página:
+// - por HTTPS (detrás de Caddy, p. ej. https://cargador.infraestructura-it.com): mismo dominio,
+//   bajo /api. Así no hay contenido mixto (https → http) que el navegador bloquee.
+// - por HTTP (http://<IP>:3001): NEXT_PUBLIC_API_URL, como siempre.
+function apiUrl() {
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') return `${window.location.origin}/api`;
+  return API_ENV;
+}
 const CLAVE_TOKEN = 'electrolineras:token';
 const CLAVE_CONDUCTOR = 'electrolineras:conductor'; // token de la app del conductor (independiente del panel)
 
@@ -55,7 +64,7 @@ export class ErrorApi extends Error {
 // quien: qué token se envía. 'panel' (por defecto) o 'conductor' (app del usuario final).
 async function request<T>(path: string, options?: RequestInit, quien: 'panel' | 'conductor' = 'panel'): Promise<T> {
   const token = typeof window === 'undefined' ? null : quien === 'conductor' ? leerTokenConductor() : leerToken();
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${apiUrl()}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -706,7 +715,11 @@ export const ocppApi = {
 };
 
 // URL del gateway OCPP que se configura en el cargador (domain_master).
-export const urlOcpp = () => `${API_URL.replace(/^http/, 'ws')}/ocpp`;
+// URL que se configura en el cargador (domain_master). Detrás de Caddy: wss://<dominio>/ocpp.
+export const urlOcpp = () =>
+  typeof window !== 'undefined' && window.location.protocol === 'https:'
+    ? `wss://${window.location.host}/ocpp`
+    : `${API_ENV.replace(/^http/, 'ws')}/ocpp`;
 
 // ---------- Utilidades de formato ----------
 

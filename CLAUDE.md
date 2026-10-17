@@ -43,7 +43,7 @@ electrolineras/
 ├── docs/                    # especificación técnica y modelo de datos
 ├── scripts/proxmox/         # crear-lxc.sh (contenedor Ubuntu 24.04) y migrar-datos.sh
 ├── scripts/linux/           # instalar.sh y actualizar.sh (Ubuntu 24.04, PM2 + systemd)
-├── scripts/windows/         # despliegue en Windows Server y simular-cargadores.ps1 (flota de prueba)
+├── scripts/windows/         # despliegue en Windows Server, instalar-caddy.ps1 (HTTPS) y simular-cargadores.ps1
 └── ecosystem.config.js      # procesos PM2 (backend + frontend)
 ```
 
@@ -200,6 +200,18 @@ Pública = sin login. Admin = solo administradores. El resto exige login (con al
   `components/Mapa` (carga dinámica, `ssr: false`), nunca `MapaBase` directo.
 - **Monitor** (`/monitor`): pantalla completa que se abre en otra pestaña; estado de cada conector
   (disponible, cargando, falla, sin conexión), sesión activa, kW y kWh, refresco automático.
+
+## HTTPS con Caddy
+
+- `scripts/windows/instalar-caddy.ps1` instala Caddy como servicio de Windows (`C:\caddy`), con
+  certificados de Let's Encrypt automáticos. Requiere DNS (registros A) y los puertos 80/443 del
+  router reenviados a la VM.
+- `https://cargador.infraestructura-it.com`: panel y app (3001); la API en `/api` (3000, sin el
+  prefijo); los cargadores por `wss://…/ocpp/<serie>` (solo peticiones WebSocket, porque `/ocpp`
+  también es una página del panel). `https://pagos.infraestructura-it.com`: API (webhooks de la pasarela).
+- El frontend elige la API en tiempo de ejecución (`api.ts`, `apiUrl()`): página por HTTPS →
+  `<origen>/api`; por HTTP (IP:3001) → `NEXT_PUBLIC_API_URL`. Así funcionan las dos entradas a la vez.
+- Tras instalarlo: Configuración → URL pública = `https://cargador.infraestructura-it.com` (QR).
 
 ## Huella (WebAuthn / passkeys)
 
