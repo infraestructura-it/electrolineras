@@ -43,7 +43,7 @@ electrolineras/
 ├── docs/                    # especificación técnica y modelo de datos
 ├── scripts/proxmox/         # crear-lxc.sh (contenedor Ubuntu 24.04) y migrar-datos.sh
 ├── scripts/linux/           # instalar.sh y actualizar.sh (Ubuntu 24.04, PM2 + systemd)
-├── scripts/windows/         # scripts de despliegue para Windows Server
+├── scripts/windows/         # despliegue en Windows Server y simular-cargadores.ps1 (flota de prueba)
 └── ecosystem.config.js      # procesos PM2 (backend + frontend)
 ```
 
@@ -166,7 +166,10 @@ Pública = sin login. Admin = solo administradores. El resto exige login (con al
 - Probar sin el equipo: carpeta `simulador/` (ver su README): `npm install` y
   `npm start -- ws://<servidor>:3000/ocpp/ws <serie> [--ocpp 2.0.1] [--soc 20]` (teclas `t <tarjeta>`, `s`, `f`, `a`,
   `c [seg]` corte de red, `x` reinicio que pierde la transacción, `q`).
-  Corre en cualquier equipo con Node 18+, sin instalar el backend.
+  Corre en cualquier equipo con Node 18+, sin instalar el backend. `--auto` lo pone a cargar solo.
+- Flota de prueba: `scripts/windows/simular-cargadores.ps1` (10 cargadores `SIM01…SIM10` en modo
+  automático, `-Registrar` los da de alta, `-Estado`, `-Detener` con apagado ordenado). Los arranca
+  con WMI (`Win32_Process.Create`) para que sigan vivos al cerrar la sesión SSH.
 
 ## Proformas (prefacturas)
 

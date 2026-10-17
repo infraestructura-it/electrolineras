@@ -5,7 +5,7 @@
 //
 // Uso (desde la carpeta simulador/, después de "npm install", o desde la raíz del repo):
 //   npm start -- <url> <numero_serie> [--ocpp 1.6|2.0.1] [--potencia 30] [--intervalo 5]
-//                                     [--bateria 60] [--soc 20]
+//                                     [--bateria 60] [--soc 20] [--auto [tarjeta]] [--parar-con <archivo>]
 //   npm start -- ws://192.168.2.47:3000/ocpp/ws 2222233333
 //   npm start -- ws://192.168.2.47:3000/ocpp/ws 2222233333 --ocpp 2.0.1
 //
@@ -16,11 +16,20 @@
 //   c [seg]     cortar la red N segundos (def. 30): la carga sigue y el cierre se envía al volver
 //   x           reinicio que PIERDE la transacción (firmware defectuoso): prueba la recuperación del servidor
 //   q           salir
+//
+// --auto: el cargador trabaja solo (para pruebas con varios cargadores): cada cierto tiempo llega
+// un vehículo con batería al azar, pasa la tarjeta (por defecto AF22FF0B, debe estar autorizada en
+// Configuración → RFID), carga unos minutos o hasta el 100 % y se va. De vez en cuando simula una
+// falla breve. Las cargas iniciadas desde la app (QR) también funcionan en este modo.
+//
+// Apagado ordenado: con Ctrl+C, "q", o al aparecer el archivo de --parar-con (lo usa
+// scripts/windows/simular-cargadores.ps1 -Detener), cierra la carga en curso y luego sale.
 'use strict';
 
 const WebSocket = require('ws');
 const { randomUUID, randomBytes } = require('crypto');
 const readline = require('readline');
+const fs = require('fs');
 
 const args = process.argv.slice(2);
 const valorDe = (nombre) => {
@@ -28,7 +37,10 @@ const valorDe = (nombre) => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 const opcion = (nombre, defecto) => (valorDe(nombre) === undefined ? defecto : Number(valorDe(nombre)));
-const [urlBase, serie] = args.filter((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--')));
+// Posicionales: lo que no es "--opcion" ni el valor de una opción (--auto puede ir sin valor).
+const [urlBase, serie] = args.filter(
+  (a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--') && !(args[i - 1] === '--auto' && /^wss?:/.test(a))),
+);
 if (!urlBase || !serie) {
   console.error(
     'Uso: npm start -- <url> <numero_serie> [--ocpp 1.6|2.0.1] [--potencia 30] [--intervalo 5] [--bateria 60] [--soc 20]\n' +
@@ -42,6 +54,11 @@ const POTENCIA_KW = opcion('potencia', 30);
 const INTERVALO_MEDICION_S = opcion('intervalo', 5);
 const BATERIA_KWH = opcion('bateria', 60); // capacidad del vehículo simulado
 const SOC_INICIAL = opcion('soc', 20); // % con el que llega el vehículo
+const AUTO = args.includes('--auto');
+const TARJETA_AUTO = (() => {
+  const v = valorDe('auto');
+  return v && !v.startsWith('--') && !/^wss?:/.test(v) ? v : 'AF22FF0B';
+})();
 
 // Configuración que se lee y cambia por OCPP (1.6: claves; 2.0.1: componente.variable).
 const config = {
@@ -155,11 +172,14 @@ async function autorizar(idTag) {
   return (V2 ? r?.idTokenInfo?.status : r?.idTagInfo?.status) ?? 'Sin respuesta';
 }
 
+// Vehículo que llega (en modo --auto cambia en cada carga).
+let vehiculo = { bateria: BATERIA_KWH, soc: SOC_INICIAL };
+
 async function iniciarCarga(idTag, { remoto = false, remoteStartId } = {}) {
   if (transaccion) return log('Ya hay una carga en curso');
   await enviarEstado('Preparing');
   if (V2) {
-    transaccion = { id: `TX${randomBytes(4).toString('hex').toUpperCase()}`, idTag, soc: SOC_INICIAL };
+    transaccion = { id: `TX${randomBytes(4).toString('hex').toUpperCase()}`, idTag, soc: vehiculo.soc };
     const r = await eventoTransaccion('Started', remoto ? 'RemoteStart' : 'Authorized', {
       idToken: idTag,
       tipoToken: remoto ? 'Central' : 'ISO14443',
@@ -177,23 +197,23 @@ async function iniciarCarga(idTag, { remoto = false, remoteStartId } = {}) {
       log('StartTransaction rechazado:', r?.idTagInfo?.status);
       return enviarEstado('Available');
     }
-    transaccion = { id: r.transactionId, idTag, soc: SOC_INICIAL };
+    transaccion = { id: r.transactionId, idTag, soc: vehiculo.soc };
   }
   await enviarEstado('Charging');
   const kwhPorMuestra = (POTENCIA_KW * INTERVALO_MEDICION_S) / 3600;
   temporizadorMedicion = setInterval(() => {
     if (!transaccion) return;
-    const faltaKwh = ((100 - transaccion.soc) / 100) * BATERIA_KWH;
+    const faltaKwh = ((100 - transaccion.soc) / 100) * vehiculo.bateria;
     const entregado = Math.min(kwhPorMuestra, faltaKwh);
     medidorWh += entregado * 1000;
-    transaccion.soc = Math.min(100, transaccion.soc + (entregado / BATERIA_KWH) * 100);
+    transaccion.soc = Math.min(100, transaccion.soc + (entregado / vehiculo.bateria) * 100);
     enviarMedicion();
     if (transaccion.soc >= 100) {
       log('🔋 Batería al 100 %: el vehículo terminó la carga');
       detenerCarga('EVDisconnected');
     }
   }, INTERVALO_MEDICION_S * 1000);
-  log(`Cargando a ${POTENCIA_KW} kW · transacción ${transaccion.id} · batería ${BATERIA_KWH} kWh desde ${SOC_INICIAL} %`);
+  log(`Cargando a ${POTENCIA_KW} kW · transacción ${transaccion.id} · batería ${vehiculo.bateria} kWh desde ${Math.round(vehiculo.soc)} %`);
 }
 
 async function detenerCarga(motivo = 'Remote') {
@@ -370,6 +390,11 @@ async function boot() {
     log('▶ Enviando lo guardado:', m.accion, m.payload.eventType ?? '');
     m.resolver(await llamar(m.accion, m.payload));
   }
+  if (AUTO && !cicloAuto) {
+    cicloAuto = true;
+    setTimeout(cicloAutomatico, azar(5, 40) * 1000); // escalonar el arranque de varios cargadores
+    log(`Modo automático: cargas solas con la tarjeta ${TARJETA_AUTO}`);
+  }
   if (transaccion) {
     await enviarEstado('Charging');
     enviarMedicion();
@@ -437,6 +462,59 @@ function conectar() {
   });
 }
 
+// ---------- Modo automático (--auto) ----------
+
+let cicloAuto = false;
+const azar = (min, max) => min + Math.random() * (max - min);
+const espera = (seg) => new Promise((r) => setTimeout(r, seg * 1000));
+
+async function cicloAutomatico() {
+  for (;;) {
+    try {
+      if (!enLinea() || !disponible || estado === 'Faulted') {
+        await espera(10);
+        continue;
+      }
+      // De vez en cuando, una falla breve (≈ 1 de cada 12 ciclos).
+      if (!transaccion && Math.random() < 0.08) {
+        log('⚠ [auto] Falla simulada');
+        await enviarEstado('Faulted', 'GroundFailure');
+        await espera(azar(30, 90));
+        await enviarEstado('Available');
+        log('[auto] Falla resuelta');
+        continue;
+      }
+      if (!transaccion) {
+        vehiculo = { bateria: Math.round(azar(40, 80)), soc: Math.round(azar(10, 70)) };
+        log(`🚗 [auto] Llega un vehículo (${vehiculo.bateria} kWh, ${vehiculo.soc} %)`);
+        const resultado = await autorizar(TARJETA_AUTO);
+        if (resultado === 'Accepted') await iniciarCarga(TARJETA_AUTO);
+        else {
+          log(`[auto] Tarjeta ${TARJETA_AUTO} rechazada (${resultado}): autorízala en Configuración → RFID`);
+          await espera(120);
+          continue;
+        }
+      }
+      // Una carga que no inició el modo automático (app, consola, otra tarjeta) se deja terminar sola.
+      if (transaccion && transaccion.idTag !== TARJETA_AUTO) {
+        while (transaccion) await espera(5);
+        continue;
+      }
+      // Carga entre 2 y 12 minutos (o hasta que la batería llegue al 100 %).
+      const hasta = Date.now() + azar(120, 720) * 1000;
+      while (transaccion && Date.now() < hasta) await espera(5);
+      if (transaccion) {
+        log('[auto] El conductor detiene la carga');
+        await detenerCarga('Local');
+      }
+      await espera(azar(30, 180)); // tiempo libre hasta el siguiente vehículo
+    } catch (e) {
+      log('[auto] Error:', e.message);
+      await espera(15);
+    }
+  }
+}
+
 readline.createInterface({ input: process.stdin }).on('line', async (linea) => {
   const [cmd, valor] = linea.trim().split(/\s+/);
   if (cmd === 't') {
@@ -458,7 +536,27 @@ readline.createInterface({ input: process.stdin }).on('line', async (linea) => {
     transaccion = null;
     cola.length = 0;
     ws.close(1012, 'Reinicio');
-  } else if (cmd === 'q') process.exit(0);
+  } else if (cmd === 'q') apagar('tecla q');
 });
+
+// ---------- Apagado ordenado ----------
+
+let apagando = false;
+async function apagar(motivo) {
+  if (apagando) return;
+  apagando = true;
+  log(`Apagando (${motivo})…`);
+  setTimeout(() => process.exit(0), 8000).unref(); // por si el servidor no responde
+  try {
+    if (transaccion && enLinea()) await detenerCarga('Local');
+  } catch {
+    /* se sale igual */
+  }
+  process.exit(0);
+}
+process.on('SIGINT', () => apagar('Ctrl+C'));
+process.on('SIGTERM', () => apagar('SIGTERM'));
+const ARCHIVO_PARAR = valorDe('parar-con');
+if (ARCHIVO_PARAR) setInterval(() => fs.existsSync(ARCHIVO_PARAR) && apagar('orden de detener'), 2000).unref();
 
 conectar();

@@ -37,6 +37,28 @@ En Linux es igual (`mkdir ~/pruebas && cd ~/pruebas`, etc.).
 
 Para traer cambios más adelante: `git pull` dentro de `C:\pruebas\electrolineras` y `npm install`.
 
+- `--auto [tarjeta]`: el cargador trabaja solo. Llegan vehículos con batería al azar, pasan la
+  tarjeta (por defecto `AF22FF0B`, debe estar en Configuración → RFID), cargan de 2 a 12 minutos o
+  hasta el 100 % y se van; de vez en cuando hay una falla breve. Las cargas desde la app (QR) y la
+  consola también funcionan, y el modo automático no las corta.
+
+## Flota de cargadores (Windows)
+
+`scripts\windows\simular-cargadores.ps1` arranca varios simuladores en modo automático (por
+defecto 10: `SIM01` … `SIM10`), sin ventanas y sin depender de la sesión SSH:
+
+```powershell
+$s = 'C:\Users\Administrador\electrolineras\scripts\windows\simular-cargadores.ps1'
+powershell -ExecutionPolicy Bypass -File $s -Registrar            # registra los que falten (pide la clave del admin) y arranca
+powershell -ExecutionPolicy Bypass -File $s -Estado               # cuáles corren y qué hace cada uno
+powershell -ExecutionPolicy Bypass -File $s -Detener              # cierra las cargas en curso y apaga la flota
+```
+
+Opciones: `-Cantidad 20`, `-Prefijo SIM`, `-Ocpp 1.6|2.0.1|mixto`, `-Servidor http://<ip>:3000`,
+`-Tarjeta <idTag>`, `-Manual` (sin cargas automáticas), `-Ventanas` (cada cargador en su ventana,
+con teclado), y para `-Registrar`: `-Empresa`, `-Electrolinera` (por nombre), `-Tarifa 1200`.
+Registros en `simulador\flota\<serie>.log`.
+
 ## Teclas mientras corre
 
 | Tecla | Acción |
@@ -47,7 +69,7 @@ Para traer cambios más adelante: `git pull` dentro de `C:\pruebas\electrolinera
 | `a` | Volver a disponible (`Available`) |
 | `c [seg]` | Cortar la red N segundos (por defecto 30). La carga sigue; si se detiene sin red, el `StopTransaction` se guarda y se envía al reconectar |
 | `x` | Reinicio que **pierde** la transacción (como un firmware defectuoso): el servidor la cierra solo con la última lectura |
-| `q` | Salir |
+| `q` | Salir (cierra antes la carga en curso; igual con Ctrl+C) |
 
 ## Pruebas sugeridas
 
