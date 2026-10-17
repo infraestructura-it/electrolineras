@@ -63,3 +63,16 @@ IP=192.168.2.50/24 GW=192.168.2.1 \
 ```
 
 En Windows Server usar los scripts de `scripts/windows/`. Detalle de ambos en `CLAUDE.md`.
+
+## Créditos
+
+Desarrollado por **[Infraestructura-IT](https://infraestructura-it.com)** (Bogotá, Colombia).
+
+- **Jairo Sepúlveda**: dirección del proyecto, arquitectura, integración con el cargador
+  MDXDC3001 y pruebas en campo.
+- **Claude** (Anthropic): coautor del código, como asistente de desarrollo con IA. Los commits en
+  los que participó llevan la línea `Co-Authored-By: Claude`, por eso aparece en la lista de
+  contribuidores de GitHub.
+
+Las decisiones de diseño, las pruebas con el equipo real y la responsabilidad sobre el software
+son de Infraestructura-IT.
