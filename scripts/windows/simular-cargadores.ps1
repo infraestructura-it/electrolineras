@@ -17,7 +17,7 @@ Uso (PowerShell, desde cualquier carpeta):
 Opciones:
   -Cantidad 10          número de cargadores
   -Prefijo SIM          números de serie: SIM01, SIM02, …
-  -Servidor URL         API (por defecto http://localhost:3000)
+  -Servidor URL         API (por defecto http://127.0.0.1:3000)
   -Ocpp 1.6|2.0.1|mixto versión del protocolo (mixto: los pares en 2.0.1)
   -Tarjeta AF22FF0B     tarjeta RFID de las cargas automáticas (autorizada en Configuración → RFID)
   -Manual               sin cargas automáticas (solo responden a la app y a la consola OCPP)
@@ -33,7 +33,7 @@ Registros: simulador\flota\<serie>.log
 param(
     [ValidateRange(1, 200)][int]$Cantidad = 10,
     [ValidatePattern('^[A-Za-z0-9._-]{1,40}$')][string]$Prefijo = 'SIM',
-    [string]$Servidor = 'http://localhost:3000',
+    [string]$Servidor = 'http://127.0.0.1:3000',
     [ValidateSet('1.6', '2.0.1', 'mixto')][string]$Ocpp = '1.6',
     [string]$Tarjeta = 'AF22FF0B',
     [switch]$Manual,
@@ -50,6 +50,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+# Windows PowerShell 5.1 busca un proxy (WPAD) antes de cada petición y puede quedarse colgado
+# minutos en un servidor: las peticiones a la API van directas, sin proxy y con tiempo límite.
+[System.Net.WebRequest]::DefaultWebProxy = $null
+$espera = 15
 
 $repo = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $carpetaSim = Join-Path $repo 'simulador'
@@ -137,7 +141,7 @@ if ($yaCorriendo.Count) {
 # ---------- ¿Están registrados? ----------
 function Test-Registrado($serie) {
     try {
-        Invoke-RestMethod -Uri "$Servidor/cargadores/$serie" -Method Get | Out-Null
+        Invoke-RestMethod -TimeoutSec $espera -Uri "$Servidor/cargadores/$serie" -Method Get | Out-Null
         return $true
     } catch {
         $codigo = $null
@@ -148,7 +152,10 @@ function Test-Registrado($serie) {
 }
 
 Write-Host "==> Revisando $Cantidad cargadores en $Servidor"
-$faltan = @($series | Where-Object { -not (Test-Registrado $_) })
+$faltan = @()
+foreach ($serie in $series) {
+    if (Test-Registrado $serie) { Write-Host "    $serie ya registrado" } else { Write-Host "    $serie falta"; $faltan += $serie }
+}
 
 if ($faltan.Count -and -not $Registrar) {
     Write-Warning "No están registrados: $($faltan -join ', ')"
@@ -161,16 +168,16 @@ if ($faltan.Count) {
         $segura = Read-Host "Clave de $Correo" -AsSecureString
         $Clave = [System.Net.NetworkCredential]::new('', $segura).Password
     }
-    $login = Invoke-RestMethod -Uri "$Servidor/auth/login" -Method Post -ContentType 'application/json; charset=utf-8' `
+    $login = Invoke-RestMethod -TimeoutSec $espera -Uri "$Servidor/auth/login" -Method Post -ContentType 'application/json; charset=utf-8' `
         -Body ([System.Text.Encoding]::UTF8.GetBytes((@{ email = $Correo; password = $Clave } | ConvertTo-Json)))
     $cabeceras = @{ Authorization = "Bearer $($login.token)" }
 
-    $empresas = @(Invoke-RestMethod -Uri "$Servidor/operadores" -Headers $cabeceras)
+    $empresas = @(Invoke-RestMethod -TimeoutSec $espera -Uri "$Servidor/operadores" -Headers $cabeceras)
     if (-not $empresas.Count) { throw 'No hay empresas registradas: crea una en el panel (Empresas) primero.' }
     $emp = if ($Empresa) { $empresas | Where-Object { $_.nombre -like "*$Empresa*" } | Select-Object -First 1 } else { $empresas[0] }
     if (-not $emp) { throw "No se encontró la empresa '$Empresa'. Empresas: $(($empresas.nombre) -join ', ')" }
 
-    $sitios = @(Invoke-RestMethod -Uri "$Servidor/electrolineras" -Headers $cabeceras | Where-Object { $_.operador_id -eq $emp.id })
+    $sitios = @(Invoke-RestMethod -TimeoutSec $espera -Uri "$Servidor/electrolineras" -Headers $cabeceras | Where-Object { $_.operador_id -eq $emp.id })
     $sitio = if ($Electrolinera) { $sitios | Where-Object { $_.nombre -like "*$Electrolinera*" } | Select-Object -First 1 } else { $sitios | Select-Object -First 1 }
     if ($Electrolinera -and -not $sitio) { throw "La empresa $($emp.nombre) no tiene la electrolinera '$Electrolinera'." }
 
@@ -189,7 +196,7 @@ if ($faltan.Count) {
             potencia_kw      = 30
         }
         try {
-            Invoke-RestMethod -Uri "$Servidor/cargadores" -Method Post -Headers $cabeceras -ContentType 'application/json; charset=utf-8' `
+            Invoke-RestMethod -TimeoutSec $espera -Uri "$Servidor/cargadores" -Method Post -Headers $cabeceras -ContentType 'application/json; charset=utf-8' `
                 -Body ([System.Text.Encoding]::UTF8.GetBytes(($cuerpo | ConvertTo-Json))) | Out-Null
             Write-Host "    $serie registrado"
         } catch {
