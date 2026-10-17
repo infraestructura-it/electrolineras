@@ -165,13 +165,26 @@ if ($faltan.Count -and -not $Registrar) {
 
 if ($faltan.Count) {
     if (-not $Clave) {
-        $segura = Read-Host "Clave de $Correo" -AsSecureString
+        # Por SSH el texto de Read-Host a veces no se ve: se escribe la pregunta aparte.
+        Write-Host ''
+        Write-Host "    Escribe la clave de $Correo y presiona Enter (no se ve mientras escribes)." -ForegroundColor Yellow
+        Write-Host "    También puedes pasarla en el comando: -Clave 'tu-clave'" -ForegroundColor DarkGray
+        $segura = Read-Host -AsSecureString
         $Clave = [System.Net.NetworkCredential]::new('', $segura).Password
     }
-    $login = Invoke-RestMethod -TimeoutSec $espera -Uri "$Servidor/auth/login" -Method Post -ContentType 'application/json; charset=utf-8' `
-        -Body ([System.Text.Encoding]::UTF8.GetBytes((@{ email = $Correo; password = $Clave } | ConvertTo-Json)))
+    Write-Host "==> Entrando como $Correo"
+    try {
+        $login = Invoke-RestMethod -TimeoutSec $espera -Uri "$Servidor/auth/login" -Method Post -ContentType 'application/json; charset=utf-8' `
+            -Body ([System.Text.Encoding]::UTF8.GetBytes((@{ email = $Correo; password = $Clave } | ConvertTo-Json)))
+    } catch {
+        $codigo = $null
+        if ($_.Exception.Response) { $codigo = [int]$_.Exception.Response.StatusCode }
+        if ($codigo -eq 401) { throw "Clave incorrecta para $Correo (es la de ADMIN_PASSWORD en backend\.env)." }
+        throw "No se pudo entrar: $($_.Exception.Message)"
+    }
     $cabeceras = @{ Authorization = "Bearer $($login.token)" }
 
+    Write-Host '==> Buscando empresa y electrolinera'
     $empresas = @(Invoke-RestMethod -TimeoutSec $espera -Uri "$Servidor/operadores" -Headers $cabeceras)
     if (-not $empresas.Count) { throw 'No hay empresas registradas: crea una en el panel (Empresas) primero.' }
     $emp = if ($Empresa) { $empresas | Where-Object { $_.nombre -like "*$Empresa*" } | Select-Object -First 1 } else { $empresas[0] }
@@ -208,6 +221,7 @@ if ($faltan.Count) {
 }
 
 # ---------- Arrancar ----------
+Write-Host "==> Arrancando $Cantidad cargadores"
 $vacio = Join-Path $carpetaFlota 'sin-teclado.txt'
 Set-Content -Path $vacio -Value '' -NoNewline
 Remove-Item (Join-Path $carpetaFlota '*.detener') -ErrorAction SilentlyContinue
