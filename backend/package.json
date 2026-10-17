@@ -1,6 +1,6 @@
 {
   "name": "electrolineras-backend",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Backend core de Electrolineras: gestión de operadores, cargadores, sesiones y facturación",
   "scripts": {
     "start": "ts-node src/main.ts",

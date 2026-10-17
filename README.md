@@ -1,50 +1,77 @@
-# Electrolineras
+# Electrolineras · v1.0
 
-Plataforma de gestión y facturación de cargadores eléctricos DC. Permite a un operador
-(dueño de uno o varios cargadores) registrar su hardware, definir tarifas, y facturar
-automáticamente a los usuarios finales, con reparto de comisión hacia la plataforma.
+Plataforma de gestión y facturación de cargadores eléctricos DC. Una empresa (operador) registra
+sus electrolineras y cargadores, define tarifas y factura a los conductores; la plataforma retiene
+una comisión pactada con cada empresa. Hardware de referencia: cargador DC 30 kW **MDXDC3001**
+(OCPP 1.6J, CCS2, RFID y QR).
+
+Guía técnica, convenciones y despliegue: [`CLAUDE.md`](CLAUDE.md). Historial de versiones:
+[`CHANGELOG.md`](CHANGELOG.md).
 
 ## Estructura del repositorio
 
 ```
 electrolineras/
-├── backend/     # API NestJS: operadores, cargadores, sesiones, facturación, gateway OCPP
-├── frontend/    # Next.js 14: panel de operador + app de usuario final (QR → carga → pago)
-├── simulador/   # Simulador OCPP del cargador para pruebas (npm install && npm start -- <url> <serie>)
-├── docs/        # Especificación técnica y modelo de datos
-└── scripts/windows/  # Scripts de despliegue para Windows Server (PM2, firewall, arranque)
+├── backend/        # API NestJS + gateway OCPP 1.6J / 2.0.1 (puerto 3000)
+├── frontend/       # Next.js 14: panel, monitor, app del conductor (puerto 3001)
+├── simulador/      # Simulador OCPP del MDXDC3001 (uno o una flota)
+├── herramientas/   # licencias-iit.js: emisión de licencias (solo IIT)
+├── docs/           # Especificación técnica y modelo de datos
+└── scripts/        # Despliegue: proxmox/ (LXC), linux/, windows/ (+ simular-cargadores.ps1)
 ```
 
-Guía de trabajo, convenciones y despliegue en Windows Server: ver [`CLAUDE.md`](CLAUDE.md).
+## Qué incluye la versión 1.0
 
-## Estado actual
+**Operación y OCPP**
+- Gateway OCPP **1.6J y 2.0.1**, seleccionable por cargador (o automático).
+- Inicio y fin de carga desde la app (QR), con tarjeta RFID o desde la consola OCPP.
+- Recuperación de transacciones huérfanas (cortes de red, reinicios del cargador).
+- Consola OCPP con catálogo de comandos por versión y registro de mensajes.
+- Monitor en vivo en pantalla completa (otra pestaña).
 
-Esqueleto inicial del backend con los cinco módulos núcleo (ver `docs/especificacion-tecnica.md`
-para el detalle de arquitectura, modelo de datos y flujo de facturación):
+**Organización y acceso**
+- Jerarquía Zona → Empresa → Electrolinera → Cargador, con ubicación en mapa.
+- Roles: admin de la plataforma, administrador de empresa y operario (opcionalmente por zona).
+- Ingreso con clave o con huella / rostro del dispositivo (passkeys; requiere HTTPS).
+- Licencias de activación por empresa (NIT, límite de cargadores, vencimiento), firmadas por IIT.
 
-- `operadores` — CRUD básico de operadores.
-- `cargadores` — registro y consulta de cargadores por número de serie.
-- `sesiones` — inicio/fin de sesiones de carga.
-- `facturacion` — cálculo de costo y reparto de comisión (pendiente integrar Wompi).
-- `ocpp-gateway` — puente OCPP con el hardware (pendiente confirmar versión OCPP del MDXDC3001).
+**Conductor y facturación**
+- App del conductor: mapa de electrolineras con disponibilidad, cuenta, historial de cargas.
+- Programa de puntos por empresa: acumulación por kWh y redención como descuento.
+- Tarifa por kWh, cálculo de comisión por empresa, dashboard de energía e ingresos.
+- Proformas (prefacturas) con consecutivo, QR de verificación, retenciones y anulación.
 
-## Cómo correr el backend (una vez tengas Node.js instalado)
+**Pruebas y despliegue**
+- Simulador del MDXDC3001 (1.6J / 2.0.1, batería, cortes de red) y flota de 10 cargadores.
+- Despliegue en Windows Server (PM2) o contenedor LXC Ubuntu en Proxmox con un comando.
+
+## Lo que falta (hoja de ruta)
+
+Ordenado por prioridad para salir a operación comercial.
+
+| # | Pendiente | Por qué importa | Estado |
+|---|---|---|---|
+| 1 | **Probar con el MDXDC3001 real** | Todo el flujo OCPP está validado solo con el simulador | Pendiente: falta la conexión de red del equipo |
+| 2 | **Pasarela de pagos** (cobro real + dispersión a cada empresa) | Hoy el pago queda `pendiente`: no entra dinero | Pendiente: elegir pasarela (ver propuesta abajo) |
+| 3 | **Dominio con HTTPS y `wss://`** | Seguridad de pagos y datos; la huella lo exige; los cargadores conectan cifrado | Pendiente: certificado para `cargador.infraestructura-it.com` |
+| 4 | **Base de datos PostgreSQL** | Hoy son archivos JSON: sirve para pruebas, no para muchas empresas | Pendiente: las entidades TypeORM ya existen |
+| 5 | **Respaldos automáticos** | Proteger sesiones, pagos y proformas | Pendiente |
+| 6 | **Factura electrónica DIAN** (proveedor tecnológico) | Obligatoria para facturar; la proforma no la reemplaza | Pendiente |
+| 7 | **Activar licenciamiento** | Generar las llaves de IIT y publicar la llave pública | Herramienta lista, falta generar llaves |
+| 8 | **Envío de recibo / proforma por correo** | Hoy el conductor solo lo ve en la app | Pendiente |
+| 9 | **Notificaciones de falla** (correo / WhatsApp al operador) | Enterarse sin mirar el monitor | Pendiente |
+| 10 | **Reservas y tarifas por horario** | Precio distinto en hora pico; apartar cargador | Pendiente |
+| 11 | **App móvil instalable (PWA)** | Icono en el celular, notificaciones de fin de carga | Pendiente |
+| 12 | **Pruebas automáticas (CI)** | Evitar que un cambio rompa lo que ya funciona | Pendiente |
+| 13 | **Probar OCPP 2.0.1 con un equipo real** | Solo validado con el simulador | Pendiente |
+
+## Cómo correr en desarrollo
 
 ```bash
-cd backend
-npm install
-npm run start:dev
+cd backend && npm install && npm run start:dev     # API en :3000
+cd frontend && npm install && npm run dev -- -p 3001  # panel en :3001
+npm start -- ws://localhost:3000/ocpp/ws <serie>   # simulador, desde la raíz
 ```
-
-## Pendientes inmediatos
-
-1. ~~Confirmar versión OCPP del MDXDC3001~~ → **OCPP 1.6J** (ws/wss), según el manual del equipo.
-2. Conectar PostgreSQL real (TypeORM) — las entidades ya están definidas; hoy los datos se guardan en archivos JSON (`backend/data`).
-3. ~~Gateway OCPP 1.6J~~ → implementado (`ws://<servidor>:3000/ocpp/<serie>`) con consola de comandos y simulador; falta probarlo con el MDXDC3001 real.
-4. Integrar la API de cobro y dispersión de pagos de Wompi (hoy el pago queda `pendiente`).
-5. ~~App de usuario~~ → versión web lista: QR → iniciar carga → carga en vivo → pagar → recibo.
-6. ~~Panel~~ → barra lateral, login con roles (administrador / operador), dashboard con gráficos, QR descargable, consola OCPP y configuración.
-7. ~~Proformas~~ → prefacturas con consecutivo, QR de verificación, listado, anulación y parametrización en Configuración.
 
 ## Producción con PM2
 
