@@ -1,10 +1,10 @@
 ﻿<#
 Simula una flota de cargadores MDXDC3001 contra la plataforma (por defecto 10: SIM01 … SIM10).
 
-Cada cargador es un proceso del simulador (simulador\simulador-ocpp.js) en modo automático:
-llegan vehículos, pasan la tarjeta, cargan unos minutos y se van; de vez en cuando hay una falla.
-Sirve para ver el Monitor, el mapa y el tablero con movimiento. Las cargas desde la app (QR)
-también funcionan en estos cargadores.
+Cada cargador es un proceso del simulador (simulador\simulador-ocpp.js). Por defecto quedan
+conectados y DISPONIBLES, esperando a que tú inicies cada carga: desde la app (QR /c/SIM01 o el
+mapa /app) o desde la Consola OCPP (RemoteStartTransaction). Con -Auto cargan solos (llegan
+vehículos al azar, cargan unos minutos y se van), útil para ver el Monitor con movimiento.
 
 Uso (PowerShell, desde cualquier carpeta):
   $s = 'C:\Users\Administrador\electrolineras\scripts\windows\simular-cargadores.ps1'
@@ -20,7 +20,7 @@ Opciones:
   -Servidor URL         API (por defecto http://127.0.0.1:3000)
   -Ocpp 1.6|2.0.1|mixto versión del protocolo (mixto: los pares en 2.0.1)
   -Tarjeta AF22FF0B     tarjeta RFID de las cargas automáticas (autorizada en Configuración → RFID)
-  -Manual               sin cargas automáticas (solo responden a la app y a la consola OCPP)
+  -Auto                 cargas automáticas al azar (sin -Auto: solo cargan cuando tú los activas)
   -Ventanas             cada cargador en su propia ventana, con teclado (t, s, f, a, c, x, q)
   -Registrar            registra en el panel los cargadores que falten. Pide la clave del admin
                         (o -Correo/-Clave). Con -Empresa y -Electrolinera (por nombre) elige dónde;
@@ -36,7 +36,8 @@ param(
     [string]$Servidor = 'http://127.0.0.1:3000',
     [ValidateSet('1.6', '2.0.1', 'mixto')][string]$Ocpp = '1.6',
     [string]$Tarjeta = 'AF22FF0B',
-    [switch]$Manual,
+    [switch]$Auto,
+    [switch]$Manual,   # ya es el comportamiento por defecto; se acepta por compatibilidad
     [switch]$Ventanas,
     [switch]$Registrar,
     [string]$Correo = 'admin@electrolineras.local',
@@ -232,7 +233,7 @@ foreach ($serie in $series) {
     $version = switch ($Ocpp) { 'mixto' { if ($i % 2 -eq 0) { '2.0.1' } else { '1.6' } } default { $Ocpp } }
     $parar = Join-Path $carpetaFlota "$serie.detener"
     $argumentos = @("`"$script`"", $urlOcpp, $serie, '--ocpp', $version, '--intervalo', '5', '--parar-con', "`"$parar`"")
-    if (-not $Manual) { $argumentos += @('--auto', $Tarjeta) }
+    if ($Auto) { $argumentos += @('--auto', $Tarjeta) }
     $lineaNode = "`"$node`" $($argumentos -join ' ')"
     $log = Join-Path $carpetaFlota "$serie.log"
 
@@ -253,7 +254,7 @@ foreach ($serie in $series) {
         # Linux/macOS (pruebas): el shell redirige, así el proceso no depende de esta consola.
         & /bin/sh -c "cd '$carpetaSim' && nohup $lineaNode < '$vacio' > '$log' 2>&1 &"
     }
-    Write-Host ("    {0}  OCPP {1,-5}  {2}" -f $serie, $version, $(if ($Manual) { 'manual' } else { 'automático' }))
+    Write-Host ("    {0}  OCPP {1,-5}  {2}" -f $serie, $version, $(if ($Auto) { 'automático' } else { 'esperando que lo actives' }))
     Start-Sleep -Milliseconds 300
 }
 
@@ -266,6 +267,15 @@ if (-not $Ventanas) {
     Write-Host "    Detener:  powershell -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Detener"
     Write-Host "    Registros: $carpetaFlota"
 }
-if (-not $Manual) {
+if ($Auto) {
     Write-Host "    Las cargas empiezan solas en 5-40 s con la tarjeta $Tarjeta (debe estar en Configuración -> RFID)."
+} else {
+    # URL pública de la app (Configuración); si no está, la del panel en el puerto 3001.
+    $panel = $null
+    try { $panel = (Invoke-RestMethod -TimeoutSec $espera -Uri "$Servidor/configuracion/publica").url_publica_app } catch { }
+    if (-not $panel) { $panel = 'http://<IP-del-servidor>:3001' }
+    $panel = ([string]$panel).TrimEnd('/')
+    Write-Host '    Los cargadores quedan disponibles. Para iniciar una carga en uno:'
+    Write-Host "      - App:     $panel/c/$($series[0])  (o el mapa en $panel/app)"
+    Write-Host '      - Consola: panel -> Consola OCPP -> elegir el cargador -> RemoteStartTransaction'
 }

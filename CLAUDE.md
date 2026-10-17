@@ -167,8 +167,8 @@ Pública = sin login. Admin = solo administradores. El resto exige login (con al
   `npm start -- ws://<servidor>:3000/ocpp/ws <serie> [--ocpp 2.0.1] [--soc 20]` (teclas `t <tarjeta>`, `s`, `f`, `a`,
   `c [seg]` corte de red, `x` reinicio que pierde la transacción, `q`).
   Corre en cualquier equipo con Node 18+, sin instalar el backend. `--auto` lo pone a cargar solo.
-- Flota de prueba: `scripts/windows/simular-cargadores.ps1` (10 cargadores `SIM01…SIM10` en modo
-  automático, `-Registrar` los da de alta, `-Estado`, `-Detener` con apagado ordenado). Los arranca
+- Flota de prueba: `scripts/windows/simular-cargadores.ps1` (10 cargadores `SIM01…SIM10`
+  disponibles para activarlos uno a uno; `-Auto` los pone a cargar solos; `-Registrar` los da de alta, `-Estado`, `-Detener` con apagado ordenado). Los arranca
   con WMI (`Win32_Process.Create`) para que sigan vivos al cerrar la sesión SSH.
 
 ## Proformas (prefacturas)

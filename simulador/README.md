@@ -44,8 +44,9 @@ Para traer cambios más adelante: `git pull` dentro de `C:\pruebas\electrolinera
 
 ## Flota de cargadores (Windows)
 
-`scripts\windows\simular-cargadores.ps1` arranca varios simuladores en modo automático (por
-defecto 10: `SIM01` … `SIM10`), sin ventanas y sin depender de la sesión SSH:
+`scripts\windows\simular-cargadores.ps1` arranca varios simuladores (por defecto 10: `SIM01` …
+`SIM10`), sin ventanas y sin depender de la sesión SSH. Quedan disponibles y tú inicias cada carga
+(app/QR o Consola OCPP); con `-Auto` cargan solos:
 
 ```powershell
 $s = 'C:\Users\Administrador\electrolineras\scripts\windows\simular-cargadores.ps1'
@@ -55,7 +56,7 @@ powershell -ExecutionPolicy Bypass -File $s -Detener              # cierra las c
 ```
 
 Opciones: `-Cantidad 20`, `-Prefijo SIM`, `-Ocpp 1.6|2.0.1|mixto`, `-Servidor http://<ip>:3000`,
-`-Tarjeta <idTag>`, `-Manual` (sin cargas automáticas), `-Ventanas` (cada cargador en su ventana,
+`-Tarjeta <idTag>`, `-Auto` (cargas automáticas al azar), `-Ventanas` (cada cargador en su ventana,
 con teclado), y para `-Registrar`: `-Empresa`, `-Electrolinera` (por nombre), `-Tarifa 1200`.
 Registros en `simulador\flota\<serie>.log`.
 
