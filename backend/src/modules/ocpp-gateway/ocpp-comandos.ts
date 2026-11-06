@@ -153,13 +153,13 @@ export const CATALOGO_201: DefinicionComando[] = [
   {
     accion: 'RequestStopTransaction',
     descripcion: 'Detiene la transacción indicada (el id lo asigna el cargador, es texto).',
-    plantilla: { transactionId: '' },
+    plantilla: { transactionId: 'TX-1' }, // reemplazar por el id que asignó el cargador (columna de Sesiones)
     validar: (p) => requerido(p, 'transactionId', (v) => esTexto(v, 36), 'es obligatorio (texto de 1 a 36 caracteres)'),
   },
   {
     accion: 'GetTransactionStatus',
     descripcion: 'Pregunta si una transacción sigue en curso y si quedan mensajes pendientes por enviar.',
-    plantilla: { transactionId: '' },
+    plantilla: { transactionId: 'TX-1' }, // opcional: sin él, responde si quedan mensajes pendientes en general
     validar: (p) => opcional(p, 'transactionId', (v) => esTexto(v, 36), 'debe ser texto de 1 a 36 caracteres'),
   },
   {

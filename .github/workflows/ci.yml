@@ -1,0 +1,79 @@
+name: CI
+
+# Corre en cada push y pull request: pruebas y compilación del backend, compilación del
+# frontend y revisión de sintaxis del simulador. Si algo falla, el commit queda en rojo.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (pruebas y compilación)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Revisar tipos (código y pruebas)
+        run: npx tsc -p tsconfig.spec.json
+      - name: Pruebas (unitarias + integración API y OCPP)
+        run: npm run test:cov -- --ci
+        env:
+          TZ: America/Bogota
+      - name: Compilar
+        run: npm run build
+      - name: Guardar reporte de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobertura-backend
+          path: backend/coverage/lcov-report
+          retention-days: 14
+
+  frontend:
+    name: Frontend (compilación)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+      NEXT_PUBLIC_API_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Compilar (incluye revisión de tipos)
+        run: npm run build
+
+  simulador:
+    name: Simulador OCPP
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: simulador
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - run: npm ci
+      - name: Revisar sintaxis (Node 18, la versión mínima)
+        run: node --check simulador-ocpp.js

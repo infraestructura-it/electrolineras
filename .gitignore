@@ -11,3 +11,6 @@ backend/.env
 
 # Registros de la flota simulada (scripts/windows/simular-cargadores.ps1)
 simulador/flota/
+
+# Reporte de cobertura de las pruebas (npm run test:cov)
+backend/coverage/

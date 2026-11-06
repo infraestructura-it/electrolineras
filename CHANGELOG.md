@@ -1,5 +1,18 @@
 # Historial de versiones
 
+## Sin publicar
+
+### Pruebas y CI
+- 82 pruebas automáticas en el backend (Jest + Supertest): cálculos de cobro y comisión, valor en
+  letras, comandos OCPP, puntos, flujo completo de la app y gateway OCPP 1.6J / 2.0.1 con un
+  cargador falso por WebSocket.
+- GitHub Actions en cada push y pull request: pruebas y build del backend, build del frontend y
+  revisión del simulador.
+
+### Correcciones
+- Consola OCPP 2.0.1: las plantillas de `RequestStopTransaction` y `GetTransactionStatus` venían con
+  `transactionId` vacío y no pasaban su propia validación; ahora traen un ejemplo válido.
+
 ## v1.0.0 — 2026-10-17
 
 Primera versión completa de la plataforma, validada con el simulador del MDXDC3001.

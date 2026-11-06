@@ -1,5 +1,7 @@
 # Electrolineras · v1.0
 
+[![CI](https://github.com/infraestructura-it/electrolineras/actions/workflows/ci.yml/badge.svg)](https://github.com/infraestructura-it/electrolineras/actions/workflows/ci.yml)
+
 Plataforma de gestión y facturación de cargadores eléctricos DC. Una empresa (operador) registra
 sus electrolineras y cargadores, define tarifas y factura a los conductores; la plataforma retiene
 una comisión pactada con cada empresa. Hardware de referencia: cargador DC 30 kW **MDXDC3001**
@@ -62,7 +64,7 @@ Ordenado por prioridad para salir a operación comercial.
 | 9 | **Notificaciones de falla** (correo / WhatsApp al operador) | Enterarse sin mirar el monitor | Pendiente |
 | 10 | **Reservas y tarifas por horario** | Precio distinto en hora pico; apartar cargador | Pendiente |
 | 11 | **App móvil instalable (PWA)** | Icono en el celular, notificaciones de fin de carga | Pendiente |
-| 12 | **Pruebas automáticas (CI)** | Evitar que un cambio rompa lo que ya funciona | Pendiente |
+| 12 | **Pruebas automáticas (CI)** | Evitar que un cambio rompa lo que ya funciona | Hecho: 82 pruebas (Jest) + GitHub Actions en cada push |
 | 13 | **Probar OCPP 2.0.1 con un equipo real** | Solo validado con el simulador | Pendiente |
 
 ## Cómo correr en desarrollo
@@ -71,6 +73,7 @@ Ordenado por prioridad para salir a operación comercial.
 cd backend && npm install && npm run start:dev     # API en :3000
 cd frontend && npm install && npm run dev -- -p 3001  # panel en :3001
 npm start -- ws://localhost:3000/ocpp/ws <serie>   # simulador, desde la raíz
+cd backend && npm test                              # pruebas: unitarias + API + OCPP
 ```
 
 ## Producción con PM2

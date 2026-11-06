@@ -55,6 +55,7 @@ electrolineras/
 | Desarrollo | `npm run start:dev` (ts-node-dev) | `npm run dev` |
 | Compilar | `npm run build` → `dist/main.js` | `npm run build` → `.next/` |
 | Producción | `node dist/main.js` | `next start -p 3001` |
+| Pruebas | `npm test` (`test:unit`, `test:e2e`, `test:cov`) | `npm run build` (revisa tipos) |
 
 Producción con PM2, desde la raíz: `pm2 start ecosystem.config.js && pm2 save`.
 
@@ -95,6 +96,24 @@ Producción con PM2, desde la raíz: `pm2 start ecosystem.config.js && pm2 save`
 - Puerto del backend configurable con la variable `PORT` (por defecto 3000).
 - CORS habilitado en `backend/src/main.ts` porque el frontend llama a la API desde el
   navegador en otro origen (puerto 3001).
+
+## Pruebas automáticas
+
+- Jest + Supertest en `backend/test/`, configurado en `backend/package.json` (`tsconfig.spec.json`).
+  No entran al build (`tsc` solo compila `src/`).
+  - `unit/`: cálculos puros — reparto de comisión, `valorEnLetras`, catálogo y validación de
+    comandos OCPP, operadores y libro de puntos (con un almacén en memoria).
+  - `e2e/flujo-app.spec.ts`: la API completa por HTTP con medición simulada: auth y alcance por
+    empresa, sesión → pago → comisión, proforma automática (IVA, consecutivo, verificación, anulación),
+    conductor y redención de puntos, dashboard.
+  - `e2e/ocpp.spec.ts`: un cargador falso (`test/apoyo/cargador-falso.ts`) por WebSocket contra el
+    gateway: handshake y versión, 1.6J (remoto, MeterValues, Stop, RFID, huérfanas, FormationViolation)
+    y 2.0.1 (`TransactionEvent`).
+- `test/apoyo/app.ts` levanta `AppModule` igual que `main.ts`, en un puerto libre y con `DATA_DIR`
+  en una carpeta temporal: nunca toca `backend/data`.
+- **CI**: `.github/workflows/ci.yml` corre en cada push y PR: tipos + pruebas + build del backend,
+  build del frontend y sintaxis del simulador (Node 18). El reporte de cobertura queda como artefacto.
+- Al agregar un endpoint o una regla de cobro, agregar su prueba en el mismo commit.
 
 ## Endpoints
 
